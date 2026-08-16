@@ -34,6 +34,17 @@ export function getSupabaseAdmin() {
   return cachedClient;
 }
 
+/**
+ * Retorna o client Supabase OU null se as variáveis não estiverem
+ * configuradas. Usado pelo painel admin para não quebrar a página.
+ */
+export function tryGetSupabaseAdmin() {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return null;
+  }
+  return getSupabaseAdmin();
+}
+
 export const DB = {
   USERS: 'neon_warm_users',
   PLANS: 'neon_warm_plans',

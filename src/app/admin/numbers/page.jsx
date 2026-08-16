@@ -1,5 +1,6 @@
 import { readAdminSession } from '@/lib/admin.js';
-import { getSupabaseAdmin, DB } from '@/lib/supabase.js';
+import { tryGetSupabaseAdmin, DB } from '@/lib/supabase.js';
+import { AdminSetupWarning } from '@/components/AdminSetupWarning.jsx';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,16 +19,23 @@ export default async function AdminNumbersPage() {
   const session = await readAdminSession();
   if (!session) return null; // layout renderiza o login
 
-  const { data: numbers } = await getSupabaseAdmin()
-    .from(DB.NUMBERS)
-    .select('*, neon_warm_users(email, name), neon_warm_devices(id, device_id, last_seen_at, status)')
-    .order('created_at', { ascending: false })
-    .limit(100);
+  const supabase = tryGetSupabaseAdmin();
+  let numbers = null;
+  if (supabase) {
+    const { data } = await supabase
+      .from(DB.NUMBERS)
+      .select('*, neon_warm_users(email, name), neon_warm_devices(id, device_id, last_seen_at, status)')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    numbers = data;
+  }
 
   return (
     <>
       <h1 className="page-title">Números</h1>
       <p className="page-subtitle">Números de WhatsApp cadastrados no Neon Warm</p>
+
+      <AdminSetupWarning />
 
       <div className="card">
         <div className="table-wrap">

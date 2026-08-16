@@ -1,5 +1,6 @@
 import { readAdminSession } from '@/lib/admin.js';
-import { getSupabaseAdmin, DB } from '@/lib/supabase.js';
+import { tryGetSupabaseAdmin, DB } from '@/lib/supabase.js';
+import { AdminSetupWarning } from '@/components/AdminSetupWarning.jsx';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -30,16 +31,23 @@ export default async function AdminLicensesPage({ searchParams }) {
   };
   const message = MSG_MAP[msgCode] || null;
 
-  const { data: licenses } = await getSupabaseAdmin()
-    .from(DB.LICENSES)
-    .select('*, neon_warm_users(email, name), neon_warm_numbers(phone_number, phone_number_normalized), neon_warm_plans(name)')
-    .order('created_at', { ascending: false })
-    .limit(100);
+  const supabase = tryGetSupabaseAdmin();
+  let licenses = null;
+  if (supabase) {
+    const { data } = await supabase
+      .from(DB.LICENSES)
+      .select('*, neon_warm_users(email, name), neon_warm_numbers(phone_number, phone_number_normalized), neon_warm_plans(name)')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    licenses = data;
+  }
 
   return (
     <>
       <h1 className="page-title">Licenças</h1>
       <p className="page-subtitle">Gerenciamento de licenças do Neon Warm</p>
+
+      <AdminSetupWarning />
 
       {message && <div className={`alert ${message.type === 'success' ? 'alert-success' : 'alert-error'}`}>{message.text}</div>}
 

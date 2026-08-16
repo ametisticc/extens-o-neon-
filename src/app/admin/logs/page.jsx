@@ -1,5 +1,6 @@
 import { readAdminSession } from '@/lib/admin.js';
-import { getSupabaseAdmin, DB } from '@/lib/supabase.js';
+import { tryGetSupabaseAdmin, DB } from '@/lib/supabase.js';
+import { AdminSetupWarning } from '@/components/AdminSetupWarning.jsx';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -41,17 +42,22 @@ export default async function AdminLogsPage({ searchParams }) {
   const eventFilter = typeof params?.event === 'string' ? params.event : '';
   const limit = 200;
 
-  let query = getSupabaseAdmin()
-    .from(DB.LOGS)
-    .select('id, event_type, metadata, created_at, user_id, phone_number_id, device_id, neon_warm_users(email, name), neon_warm_numbers(phone_number)')
-    .order('created_at', { ascending: false })
-    .limit(limit);
+  const supabase = tryGetSupabaseAdmin();
+  let logs = null;
+  if (supabase) {
+    let query = supabase
+      .from(DB.LOGS)
+      .select('id, event_type, metadata, created_at, user_id, phone_number_id, device_id, neon_warm_users(email, name), neon_warm_numbers(phone_number)')
+      .order('created_at', { ascending: false })
+      .limit(limit);
 
-  if (eventFilter) {
-    query = query.eq('event_type', eventFilter);
+    if (eventFilter) {
+      query = query.eq('event_type', eventFilter);
+    }
+
+    const { data } = await query;
+    logs = data;
   }
-
-  const { data: logs } = await query;
 
   const eventOptions = Object.keys(EVENT_LABELS);
 
@@ -59,6 +65,8 @@ export default async function AdminLogsPage({ searchParams }) {
     <>
       <h1 className="page-title">Logs</h1>
       <p className="page-subtitle">Histórico de eventos do Neon Warm</p>
+
+      <AdminSetupWarning />
 
       <div className="card">
         <form method="get" className="form-row">

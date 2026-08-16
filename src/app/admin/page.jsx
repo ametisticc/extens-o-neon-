@@ -1,12 +1,16 @@
-import { readAdminSession, isAdminConfigured } from '@/lib/admin.js';
-import { getSupabaseAdmin, DB } from '@/lib/supabase.js';
+import { readAdminSession } from '@/lib/admin.js';
+import { isAdminConfigured } from '@/lib/admin-config.js';
+import { tryGetSupabaseAdmin, DB } from '@/lib/supabase.js';
+import { AdminSetupWarning } from '@/components/AdminSetupWarning.jsx';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // Helper para contar registros sem trazer todos.
 async function countRows(table, filters = {}) {
-  let query = getSupabaseAdmin().from(table).select('id', { count: 'exact', head: true });
+  const supabase = tryGetSupabaseAdmin();
+  if (!supabase) return 0;
+  let query = supabase.from(table).select('id', { count: 'exact', head: true });
   for (const [key, value] of Object.entries(filters)) {
     query = query.eq(key, value);
   }
@@ -37,6 +41,8 @@ async function LoginPage({ searchParams }) {
           variáveis de ambiente do Vercel e faça um novo deploy.
         </div>
       )}
+
+      {configured && <AdminSetupWarning />}
 
       <form action="/admin/login" method="post" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <input type="email" name="email" placeholder="E-mail" required autoComplete="username" />
@@ -77,12 +83,17 @@ export default async function AdminPage({ searchParams }) {
   ];
 
   // Últimas validações (logs de validação)
-  const { data: lastLogs } = await getSupabaseAdmin()
-    .from(DB.LOGS)
-    .select('id, event_type, metadata, created_at, phone_number_id')
-    .in('event_type', ['validation_success', 'validation_failed'])
-    .order('created_at', { ascending: false })
-    .limit(10);
+  const supabase = tryGetSupabaseAdmin();
+  let lastLogs = null;
+  if (supabase) {
+    const res = await supabase
+      .from(DB.LOGS)
+      .select('id, event_type, metadata, created_at, phone_number_id')
+      .in('event_type', ['validation_success', 'validation_failed'])
+      .order('created_at', { ascending: false })
+      .limit(10);
+    lastLogs = res.data;
+  }
 
   return (
     <>

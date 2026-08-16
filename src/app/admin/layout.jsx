@@ -14,33 +14,29 @@ async function AdminLayout({ children }) {
     { href: '/admin/logs', label: 'Logs', exact: false },
   ];
 
-  return (
-    <html lang="pt-BR">
-      <body>
-        {session ? (
-          <div className="admin-shell">
-            <aside className="admin-sidebar">
-              <div className="brand">Neon Warm</div>
-              <nav className="admin-nav">
-                {nav.map((item) => (
-                  <Link key={item.href} href={item.href} className="nav-link">
-                    {item.label}
-                  </Link>
-                ))}
-              </nav>
-              <form action="/admin/logout" method="post" className="logout-form">
-                <button type="submit" className="btn btn-outline btn-sm">
-                  Sair
-                </button>
-              </form>
-            </aside>
-            <main className="admin-main">{children}</main>
-          </div>
-        ) : (
-          <div className="login-full">{children}</div>
-        )}
-      </body>
-    </html>
+  // IMPORTANTE: o layout raiz (src/app/layout.jsx) já renderiza <html> e <body>.
+  // Aqui só renderizamos o conteúdo, sem tags de documento duplicadas.
+  return session ? (
+    <div className="admin-shell">
+      <aside className="admin-sidebar">
+        <div className="brand">Neon Warm</div>
+        <nav className="admin-nav">
+          {nav.map((item) => (
+            <Link key={item.href} href={item.href} className="nav-link">
+              {item.label}
+            </Link>
+          ))}
+        </nav>
+        <form action="/admin/logout" method="post" className="logout-form">
+          <button type="submit" className="btn btn-outline btn-sm">
+            Sair
+          </button>
+        </form>
+      </aside>
+      <main className="admin-main">{children}</main>
+    </div>
+  ) : (
+    <div className="login-full">{children}</div>
   );
 }
 

@@ -1,5 +1,5 @@
 import { readAdminSession } from '@/lib/admin.js';
-import { getSupabaseAdmin, DB } from '@/lib/supabase.js';
+import { tryGetSupabaseAdmin, DB } from '@/lib/supabase.js';
 import { logEvent } from '@/lib/logger.js';
 import { redirect } from 'next/navigation';
 
@@ -41,7 +41,12 @@ export async function POST(request) {
   const status = ACTION_TO_STATUS[action];
   const eventType = ACTION_TO_EVENT[action];
 
-  const { data: license, error: fetchError } = await getSupabaseAdmin()
+  const supabase = tryGetSupabaseAdmin();
+  if (!supabase) {
+    redirect('/admin?error=invalid');
+  }
+
+  const { data: license, error: fetchError } = await supabase
     .from(DB.LICENSES)
     .select('id, user_id, phone_number_id')
     .eq('id', id)
@@ -51,7 +56,7 @@ export async function POST(request) {
     redirect('/admin/licenses?msg=notfound');
   }
 
-  const { error } = await getSupabaseAdmin()
+  const { error } = await supabase
     .from(DB.LICENSES)
     .update({ status })
     .eq('id', id);
