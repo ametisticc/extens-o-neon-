@@ -47,7 +47,7 @@ async function LoginPage({ searchParams }) {
       <form action="/admin/login" method="post" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <input type="email" name="email" placeholder="E-mail" required autoComplete="username" />
         <input type="password" name="password" placeholder="Senha" required autoComplete="current-password" />
-        <button type="submit" className="btn" disabled={!configured}>Entrar</button>
+        <button type="submit" className="btn">Entrar</button>
       </form>
     </div>
   );
