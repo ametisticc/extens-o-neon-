@@ -1,0 +1,47 @@
+// ============================================================
+// Cliente Supabase (somente servidor — service role key)
+// ============================================================
+import { createClient } from '@supabase/supabase-js';
+
+function assertEnv(name) {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Variável de ambiente ausente: ${name}`);
+  }
+  return value;
+}
+
+let cachedClient = null;
+
+/**
+ * Retorna o client Supabase com a service_role key.
+ * Só pode ser importado em código de servidor (API Routes, scripts).
+ * Nunca importe este módulo a partir de componentes de cliente.
+ */
+export function getSupabaseAdmin() {
+  if (cachedClient) return cachedClient;
+
+  const url = assertEnv('SUPABASE_URL');
+  const serviceRoleKey = assertEnv('SUPABASE_SERVICE_ROLE_KEY');
+
+  cachedClient = createClient(url, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+
+  return cachedClient;
+}
+
+export const DB = {
+  USERS: 'neon_warm_users',
+  PLANS: 'neon_warm_plans',
+  SUBSCRIPTIONS: 'neon_warm_subscriptions',
+  NUMBERS: 'neon_warm_numbers',
+  LICENSES: 'neon_warm_licenses',
+  DEVICES: 'neon_warm_devices',
+  SESSIONS: 'neon_warm_sessions',
+  LOGS: 'neon_warm_logs',
+  EXTENSION_KEYS: 'neon_warm_extension_keys',
+};

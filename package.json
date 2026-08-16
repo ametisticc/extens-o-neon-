@@ -1,0 +1,22 @@
+{
+  "name": "neon-warm-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Backend Neon Warm — validação de licença/autorização para extensão Chrome de maturação de WhatsApp. Next.js + Supabase (Vercel).",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test": "node src/tests/run-tests.mjs",
+    "test:integration": "node scripts/test-integration.mjs",
+    "key:create": "node scripts/create-extension-key.mjs",
+    "db:seed": "node scripts/seed.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.52.0",
+    "next": "^15.3.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  }
+}
