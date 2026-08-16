@@ -1,4 +1,4 @@
-import { readAdminSession } from '@/lib/admin.js';
+import { readAdminSession, isAdminConfigured } from '@/lib/admin.js';
 import { getSupabaseAdmin, DB } from '@/lib/supabase.js';
 
 export const runtime = 'nodejs';
@@ -21,6 +21,7 @@ async function countRows(table, filters = {}) {
 async function LoginPage({ searchParams }) {
   const params = await searchParams;
   const error = params?.error;
+  const configured = isAdminConfigured();
 
   return (
     <div className="login-card">
@@ -29,10 +30,18 @@ async function LoginPage({ searchParams }) {
 
       {error === 'invalid' && <div className="alert alert-error">Credenciais inválidas.</div>}
 
+      {!configured && (
+        <div className="alert alert-error" style={{ fontSize: 13 }}>
+          Painel não configurado. Adicione <strong>NEON_WARM_ADMIN_EMAIL</strong>,{' '}
+          <strong>NEON_WARM_ADMIN_PASSWORD</strong> e <strong>NEON_WARM_ADMIN_SECRET</strong> nas
+          variáveis de ambiente do Vercel e faça um novo deploy.
+        </div>
+      )}
+
       <form action="/admin/login" method="post" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <input type="email" name="email" placeholder="E-mail" required autoComplete="username" />
         <input type="password" name="password" placeholder="Senha" required autoComplete="current-password" />
-        <button type="submit" className="btn">Entrar</button>
+        <button type="submit" className="btn" disabled={!configured}>Entrar</button>
       </form>
     </div>
   );
