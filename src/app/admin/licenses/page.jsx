@@ -25,21 +25,34 @@ export default async function AdminLicensesPage({ searchParams }) {
 
   const MSG_MAP = {
     ok: { text: 'Licença atualizada com sucesso.', type: 'success' },
-    invalid: { text: 'Ação inválida.', type: 'error' },
+    created: {
+      text: params?.key ? `Licença criada com sucesso! Chave: ${params.key}` : 'Licença criada com sucesso!',
+      type: 'success',
+    },
+    invalid: { text: 'Dados inválidos. Confira os campos.', type: 'error' },
     notfound: { text: 'Licença não encontrada.', type: 'error' },
-    error: { text: 'Erro ao atualizar licença.', type: 'error' },
+    error: { text: 'Erro ao criar/atualizar licença.', type: 'error' },
   };
   const message = MSG_MAP[msgCode] || null;
 
   const supabase = tryGetSupabaseAdmin();
   let licenses = null;
+  let plans = [];
   if (supabase) {
-    const { data } = await supabase
-      .from(DB.LICENSES)
-      .select('*, neon_warm_users(email, name), neon_warm_numbers(phone_number, phone_number_normalized), neon_warm_plans(name)')
-      .order('created_at', { ascending: false })
-      .limit(100);
-    licenses = data;
+    const [licensesRes, plansRes] = await Promise.all([
+      supabase
+        .from(DB.LICENSES)
+        .select('*, neon_warm_users(email, name), neon_warm_numbers(phone_number, phone_number_normalized), neon_warm_plans(name)')
+        .order('created_at', { ascending: false })
+        .limit(100),
+      supabase
+        .from(DB.PLANS)
+        .select('id, name, price, neon_warm_enabled')
+        .eq('active', true)
+        .order('name', { ascending: true }),
+    ]);
+    licenses = licensesRes.data;
+    plans = plansRes.data ?? [];
   }
 
   return (
@@ -50,6 +63,46 @@ export default async function AdminLicensesPage({ searchParams }) {
       <AdminSetupWarning />
 
       {message && <div className={`alert ${message.type === 'success' ? 'alert-success' : 'alert-error'}`}>{message.text}</div>}
+
+      <div className="card">
+        <h2>Nova licença</h2>
+        <p className="muted" style={{ marginTop: -8, marginBottom: 16 }}>
+          Cria o cliente, o número e a assinatura automaticamente se ainda não existirem.
+        </p>
+        <form action="/admin/licenses/create" method="post" className="license-create-form">
+          <div className="form-row">
+            <label htmlFor="name">Nome</label>
+            <input type="text" id="name" name="name" placeholder="Nome do cliente" autoComplete="off" />
+          </div>
+          <div className="form-row">
+            <label htmlFor="email">E-mail *</label>
+            <input type="email" id="email" name="email" placeholder="cliente@email.com" required autoComplete="off" />
+          </div>
+          <div className="form-row">
+            <label htmlFor="phone">Telefone (WhatsApp) *</label>
+            <input type="tel" id="phone" name="phone" placeholder="(11) 99999-9999" required autoComplete="off" />
+          </div>
+          <div className="form-row">
+            <label htmlFor="plan_id">Plano *</label>
+            <select id="plan_id" name="plan_id" required>
+              <option value="">Selecione o plano…</option>
+              {plans.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} — R$ {Number(p.price).toFixed(2)}
+                  {!p.neon_warm_enabled ? ' (sem Neon Warm)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-row">
+            <label htmlFor="expires_at">Vencimento *</label>
+            <input type="date" id="expires_at" name="expires_at" required />
+          </div>
+          <div className="form-row">
+            <button type="submit" className="btn">Criar licença</button>
+          </div>
+        </form>
+      </div>
 
       <div className="card">
         <div className="table-wrap">
