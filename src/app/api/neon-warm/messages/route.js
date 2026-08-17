@@ -20,7 +20,9 @@ import { readJsonBody, jsonOk, jsonError } from '@/lib/http.js';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const MAX_ROWS = 200;
+// Limite alto para a base cheia (~1000+ frases). O payload JSON é
+// pequeno (~100-150KB) e a extensão cacheia por 1h no localStorage.
+const MAX_ROWS = 2000;
 
 export async function POST(request) {
   const guard = await guardExtensionRoute(request, 'neon_warm_messages');
