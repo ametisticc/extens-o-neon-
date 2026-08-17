@@ -29,6 +29,10 @@ export default async function AdminLicensesPage({ searchParams }) {
       text: params?.key ? `Licença criada com sucesso! Chave: ${params.key}` : 'Licença criada com sucesso!',
       type: 'success',
     },
+    devices_reset: {
+      text: 'Dispositivos zerados. A extensão vai registrar um device novo no próximo uso.',
+      type: 'success',
+    },
     invalid: { text: 'Dados inválidos. Confira os campos.', type: 'error' },
     notfound: { text: 'Licença não encontrada.', type: 'error' },
     error: { text: 'Erro ao criar/atualizar licença.', type: 'error' },
@@ -137,6 +141,15 @@ export default async function AdminLicensesPage({ searchParams }) {
                             <input type="hidden" name="id" value={l.id} />
                             <input type="hidden" name="action" value="activate" />
                             <button type="submit" className="btn btn-sm">Ativar</button>
+                          </form>
+                        )}
+                        {l.status !== 'revoked' && (
+                          <form action="/admin/licenses/action" method="post" onSubmit={(e) => {
+                            if (!confirm('Zerar dispositivos desta licença? Isso encerra sessões ativas e libera o limite do plano.')) e.preventDefault();
+                          }}>
+                            <input type="hidden" name="id" value={l.id} />
+                            <input type="hidden" name="action" value="reset_devices" />
+                            <button type="submit" className="btn btn-sm btn-warning" title="Zerar dispositivos (limite do plano)">Zerar dispositivos</button>
                           </form>
                         )}
                         {l.status !== 'revoked' && (
