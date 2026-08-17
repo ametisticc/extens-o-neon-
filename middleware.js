@@ -3,6 +3,18 @@ import { NextResponse } from 'next/server';
 // Middleware global: aplica CORS básico em /api/* e bloca OPTIONS
 // sem passar pelos route handlers. A autorização em si acontece
 // dentro de cada rota (a extensão é cliente não confiável — validar no servidor).
+//
+// Origens aceitas:
+//  - lista explícita em NEON_WARM_ALLOWED_ORIGIN (separada por vírgula)
+//  - QUALQUER origem chrome-extension:// (a autenticação real é a API key
+//    no header X-NeonWarm-Key; o origin do chrome muda a cada instalação,
+//    então não dá para fixar de antemão)
+function isOriginAllowed(origin, allowedOrigins) {
+  if (!origin) return false;
+  if (origin.startsWith('chrome-extension://')) return true;
+  return allowedOrigins.includes(origin);
+}
+
 export function middleware(request) {
   const { pathname } = request.nextUrl;
 
@@ -18,7 +30,7 @@ export function middleware(request) {
 
   const origin = request.headers.get('origin');
 
-  const isAllowed = origin ? allowedOrigins.includes(origin) : false;
+  const isAllowed = isOriginAllowed(origin, allowedOrigins);
 
   if (request.method === 'OPTIONS') {
     const res = new NextResponse(null, { status: 204 });
