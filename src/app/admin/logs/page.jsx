@@ -1,5 +1,6 @@
 import { readAdminSession } from '@/lib/admin.js';
 import { tryGetSupabaseAdmin, DB } from '@/lib/supabase.js';
+import { fmtDateTime } from '@/lib/fmt.js';
 import { AdminSetupWarning } from '@/components/AdminSetupWarning.jsx';
 
 export const runtime = 'nodejs';
@@ -44,19 +45,29 @@ export default async function AdminLogsPage({ searchParams }) {
 
   const supabase = tryGetSupabaseAdmin();
   let logs = null;
+  let fetchError = null;
   if (supabase) {
-    let query = supabase
-      .from(DB.LOGS)
-      .select('id, event_type, metadata, created_at, user_id, phone_number_id, device_id, neon_warm_users(email, name), neon_warm_numbers(phone_number)')
-      .order('created_at', { ascending: false })
-      .limit(limit);
+    try {
+      let query = supabase
+        .from(DB.LOGS)
+        .select('id, event_type, metadata, created_at, user_id, phone_number_id, device_id, neon_warm_users(email, name), neon_warm_numbers(phone_number)')
+        .order('created_at', { ascending: false })
+        .limit(limit);
 
-    if (eventFilter) {
-      query = query.eq('event_type', eventFilter);
+      if (eventFilter) {
+        query = query.eq('event_type', eventFilter);
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        fetchError = `Falha ao carregar logs: ${error.message} (${error.code ?? 'sem código'})`;
+      } else {
+        logs = data;
+      }
+    } catch (err) {
+      console.error('[admin] exceção ao carregar logs:', err);
+      fetchError = `Erro inesperado ao carregar dados: ${err.message}`;
     }
-
-    const { data } = await query;
-    logs = data;
   }
 
   const eventOptions = Object.keys(EVENT_LABELS);
@@ -67,6 +78,12 @@ export default async function AdminLogsPage({ searchParams }) {
       <p className="page-subtitle">Histórico de eventos do Neon Warm</p>
 
       <AdminSetupWarning />
+
+      {fetchError && (
+        <div className="alert alert-error" style={{ fontSize: 13, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          <strong>Erro ao carregar o painel:</strong> {fetchError}
+        </div>
+      )}
 
       <div className="card">
         <form method="get" className="form-row">
@@ -100,7 +117,7 @@ export default async function AdminLogsPage({ searchParams }) {
               {logs && logs.length > 0 ? (
                 logs.map((log) => (
                   <tr key={log.id}>
-                    <td>{new Date(log.created_at).toLocaleString('pt-BR')}</td>
+                    <td>{fmtDateTime(log.created_at)}</td>
                     <td>{eventBadge(log.event_type)}</td>
                     <td className="mono">{log.neon_warm_numbers?.phone_number ?? '—'}</td>
                     <td>{log.neon_warm_users?.email ?? log.user_id?.slice(0, 8) ?? '—'}</td>

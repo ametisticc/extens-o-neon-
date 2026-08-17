@@ -1,5 +1,6 @@
 import { readAdminSession } from '@/lib/admin.js';
 import { tryGetSupabaseAdmin, DB } from '@/lib/supabase.js';
+import { fmtDate, fmtDateTime } from '@/lib/fmt.js';
 import { AdminSetupWarning } from '@/components/AdminSetupWarning.jsx';
 
 export const runtime = 'nodejs';
@@ -42,21 +43,35 @@ export default async function AdminLicensesPage({ searchParams }) {
   const supabase = tryGetSupabaseAdmin();
   let licenses = null;
   let plans = [];
+  let fetchError = null;
   if (supabase) {
-    const [licensesRes, plansRes] = await Promise.all([
-      supabase
-        .from(DB.LICENSES)
-        .select('*, neon_warm_users(email, name), neon_warm_numbers(phone_number, phone_number_normalized), neon_warm_plans(name)')
-        .order('created_at', { ascending: false })
-        .limit(100),
-      supabase
-        .from(DB.PLANS)
-        .select('id, name, price, neon_warm_enabled')
-        .eq('active', true)
-        .order('name', { ascending: true }),
-    ]);
-    licenses = licensesRes.data;
-    plans = plansRes.data ?? [];
+    try {
+      const [licensesRes, plansRes] = await Promise.all([
+        supabase
+          .from(DB.LICENSES)
+          .select('*, neon_warm_users(email, name), neon_warm_numbers(phone_number, phone_number_normalized), neon_warm_plans(name)')
+          .order('created_at', { ascending: false })
+          .limit(100),
+        supabase
+          .from(DB.PLANS)
+          .select('id, name, price, neon_warm_enabled')
+          .eq('active', true)
+          .order('name', { ascending: true }),
+      ]);
+      if (licensesRes.error) {
+        fetchError = `Falha ao carregar licenças: ${licensesRes.error.message} (${licensesRes.error.code ?? 'sem código'})`;
+      } else {
+        licenses = licensesRes.data;
+      }
+      if (plansRes.error) {
+        fetchError = fetchError || `Falha ao carregar planos: ${plansRes.error.message} (${plansRes.error.code ?? 'sem código'})`;
+      } else {
+        plans = plansRes.data ?? [];
+      }
+    } catch (err) {
+      console.error('[admin] exceção ao carregar licenças:', err);
+      fetchError = `Erro inesperado ao carregar dados: ${err.message}`;
+    }
   }
 
   return (
@@ -65,6 +80,12 @@ export default async function AdminLicensesPage({ searchParams }) {
       <p className="page-subtitle">Gerenciamento de licenças do Neon Warm</p>
 
       <AdminSetupWarning />
+
+      {fetchError && (
+        <div className="alert alert-error" style={{ fontSize: 13, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          <strong>Erro ao carregar o painel:</strong> {fetchError}
+        </div>
+      )}
 
       {message && <div className={`alert ${message.type === 'success' ? 'alert-success' : 'alert-error'}`}>{message.text}</div>}
 
@@ -132,8 +153,8 @@ export default async function AdminLicensesPage({ searchParams }) {
                     <td>{l.neon_warm_plans?.name ?? '—'}</td>
                     <td className="mono">{l.license_key ?? '—'}</td>
                     <td>{statusBadge(l.status)}</td>
-                    <td>{l.expires_at ? new Date(l.expires_at).toLocaleDateString('pt-BR') : '—'}</td>
-                    <td>{l.last_validation_at ? new Date(l.last_validation_at).toLocaleString('pt-BR') : '—'}</td>
+                    <td>{fmtDate(l.expires_at)}</td>
+                    <td>{fmtDateTime(l.last_validation_at)}</td>
                     <td>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {l.status !== 'active' && (

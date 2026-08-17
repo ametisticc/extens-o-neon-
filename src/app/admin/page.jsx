@@ -1,6 +1,7 @@
 import { readAdminSession } from '@/lib/admin.js';
 import { isAdminConfigured } from '@/lib/admin-config.js';
 import { tryGetSupabaseAdmin, DB } from '@/lib/supabase.js';
+import { fmtDateTime } from '@/lib/fmt.js';
 import { AdminSetupWarning } from '@/components/AdminSetupWarning.jsx';
 
 export const runtime = 'nodejs';
@@ -125,7 +126,7 @@ export default async function AdminPage({ searchParams }) {
               <tbody>
                 {lastLogs.map((log) => (
                   <tr key={log.id}>
-                    <td>{new Date(log.created_at).toLocaleString('pt-BR')}</td>
+                    <td>{fmtDateTime(log.created_at)}</td>
                     <td>
                       <span className={`badge ${log.event_type === 'validation_success' ? 'success' : 'blocked'}`}>
                         {log.event_type === 'validation_success' ? 'Autorizado' : 'Negado'}

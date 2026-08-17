@@ -1,5 +1,6 @@
 import { readAdminSession } from '@/lib/admin.js';
 import { tryGetSupabaseAdmin, DB } from '@/lib/supabase.js';
+import { fmtDateTime } from '@/lib/fmt.js';
 import { AdminSetupWarning } from '@/components/AdminSetupWarning.jsx';
 
 export const runtime = 'nodejs';
@@ -21,13 +22,23 @@ export default async function AdminNumbersPage() {
 
   const supabase = tryGetSupabaseAdmin();
   let numbers = null;
+  let fetchError = null;
   if (supabase) {
-    const { data } = await supabase
-      .from(DB.NUMBERS)
-      .select('*, neon_warm_users(email, name), neon_warm_devices(id, device_id, last_seen_at, status)')
-      .order('created_at', { ascending: false })
-      .limit(100);
-    numbers = data;
+    try {
+      const { data, error } = await supabase
+        .from(DB.NUMBERS)
+        .select('*, neon_warm_users(email, name), neon_warm_devices(id, device_id, last_seen_at, status)')
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (error) {
+        fetchError = `Falha ao carregar números: ${error.message} (${error.code ?? 'sem código'})`;
+      } else {
+        numbers = data;
+      }
+    } catch (err) {
+      console.error('[admin] exceção ao carregar números:', err);
+      fetchError = `Erro inesperado ao carregar dados: ${err.message}`;
+    }
   }
 
   return (
@@ -36,6 +47,12 @@ export default async function AdminNumbersPage() {
       <p className="page-subtitle">Números de WhatsApp cadastrados no Neon Warm</p>
 
       <AdminSetupWarning />
+
+      {fetchError && (
+        <div className="alert alert-error" style={{ fontSize: 13, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          <strong>Erro ao carregar o painel:</strong> {fetchError}
+        </div>
+      )}
 
       <div className="card">
         <div className="table-wrap">
@@ -60,7 +77,7 @@ export default async function AdminNumbersPage() {
                     <td>—</td>
                     <td>{statusBadge(n.status)}</td>
                     <td>—</td>
-                    <td>{n.last_seen_at ? new Date(n.last_seen_at).toLocaleString('pt-BR') : '—'}</td>
+                    <td>{fmtDateTime(n.last_seen_at)}</td>
                     <td>{n.neon_warm_devices?.length ?? 0}</td>
                   </tr>
                 ))

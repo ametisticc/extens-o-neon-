@@ -13,6 +13,11 @@ export async function GET() {
   return Response.json({
     ok: true,
     service: 'neon-warm-backend',
+    // SHA do commit que está rodando neste deploy (Vercel injeta via
+    // VERCEL_GIT_COMMIT_SHA). Serve para confirmar se o build é o mais
+    // recente do GitHub — se bater com `git rev-parse origin/main`,
+    // o código está atualizado; se não, precisa redeploy.
+    build_sha: process.env.VERCEL_GIT_COMMIT_SHA || null,
     time: new Date().toISOString(),
     config: {
       admin_configured: isAdminConfigured(),
