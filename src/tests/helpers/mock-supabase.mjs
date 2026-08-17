@@ -7,9 +7,41 @@
 import { randomUUID } from 'node:crypto';
 
 function matches(row, filters) {
-  return filters.every(({ col, val }) => {
-    const rowVal = row[col];
-    return String(rowVal) === String(val);
+  return filters.every((f) => {
+    const rowVal = row[f.col];
+    switch (f.op) {
+      case 'or':
+        // filterStr: "col.op.val,col.op.val" (OR entre as condições)
+        return f.val.split(',').some((cond) => {
+          const m = cond.trim().match(/^([\w.]+)\.(eq|gte|lt|gt|lte|neq)\.(.*)$/);
+          if (!m) return false;
+          const [, col, op, rawVal] = m;
+          const rowVal2 = row[col];
+          const val = rawVal;
+          switch (op) {
+            case 'eq': return String(rowVal2) === String(val);
+            case 'neq': return String(rowVal2) !== String(val);
+            case 'gte': return new Date(rowVal2).getTime() >= new Date(val).getTime();
+            case 'gt': return new Date(rowVal2).getTime() > new Date(val).getTime();
+            case 'lte': return new Date(rowVal2).getTime() <= new Date(val).getTime();
+            case 'lt': return new Date(rowVal2).getTime() < new Date(val).getTime();
+            default: return false;
+          }
+        });
+      case 'in':
+        return f.val.some((v) => String(rowVal) === String(v));
+      case 'is':
+        // Supabase .is(col, null) ou .is(col, true/false)
+        if (f.val === null) return rowVal == null;
+        return String(rowVal) === String(f.val);
+      case 'gte':
+        return new Date(rowVal).getTime() >= new Date(f.val).getTime();
+      case 'lt':
+        return new Date(rowVal).getTime() < new Date(f.val).getTime();
+      case 'eq':
+      default:
+        return String(rowVal) === String(f.val);
+    }
   });
 }
 
@@ -46,7 +78,27 @@ export function createMockSupabase(getDb) {
           return api;
         },
         eq(col, val) {
-          state.filters.push({ col, val });
+          state.filters.push({ col, val, op: 'eq' });
+          return api;
+        },
+        or(filterStr) {
+          state.filters.push({ col: null, val: filterStr, op: 'or' });
+          return api;
+        },
+        in(col, vals) {
+          state.filters.push({ col, val: vals, op: 'in' });
+          return api;
+        },
+        gte(col, val) {
+          state.filters.push({ col, val, op: 'gte' });
+          return api;
+        },
+        is(col, val) {
+          state.filters.push({ col, val, op: 'is' });
+          return api;
+        },
+        lt(col, val) {
+          state.filters.push({ col, val, op: 'lt' });
           return api;
         },
         order(col, opts) {

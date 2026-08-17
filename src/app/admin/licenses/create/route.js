@@ -41,7 +41,11 @@ export async function POST(request) {
     redirect('/admin/licenses?msg=invalid');
   }
 
-  const expiresAt = new Date(`${expiresAtRaw}T23:59:59`);
+  // Interpreta a data escolhida pelo operador como "fim do dia no fuso do Brasil"
+  // (America/Sao_Paulo, UTC-3). Sem isso o `new Date('YYYY-MM-DDT23:59:59')`
+  // é interpretado no fuso do servidor (Vercel = UTC), o que expira a licença
+  // 3 horas antes do fim do dia no horário do operador.
+  const expiresAt = new Date(`${expiresAtRaw}T23:59:59-03:00`);
   if (Number.isNaN(expiresAt.getTime())) {
     redirect('/admin/licenses?msg=invalid');
   }
