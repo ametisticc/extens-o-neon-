@@ -9,9 +9,15 @@ import { NextResponse } from 'next/server';
 //  - QUALQUER origem chrome-extension:// (a autenticação real é a API key
 //    no header X-NeonWarm-Key; o origin do chrome muda a cada instalação,
 //    então não dá para fixar de antemão)
+//  - https://web.whatsapp.com (o content script da extensão faz chamadas
+//    direto da página do WhatsApp Web, então o Origin é esse)
+const ALWAYS_ALLOWED_PREFIXES = ['chrome-extension://'];
+const ALWAYS_ALLOWED_EXACT = ['https://web.whatsapp.com'];
+
 function isOriginAllowed(origin, allowedOrigins) {
   if (!origin) return false;
-  if (origin.startsWith('chrome-extension://')) return true;
+  if (ALWAYS_ALLOWED_PREFIXES.some((p) => origin.startsWith(p))) return true;
+  if (ALWAYS_ALLOWED_EXACT.includes(origin)) return true;
   return allowedOrigins.includes(origin);
 }
 
