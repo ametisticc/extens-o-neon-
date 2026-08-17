@@ -112,6 +112,7 @@ export default async function AdminLicensesPage({ searchParams }) {
                 <th>Cliente</th>
                 <th>Número</th>
                 <th>Plano</th>
+                <th>Chave</th>
                 <th>Status</th>
                 <th>Vencimento</th>
                 <th>Última validação</th>
@@ -125,6 +126,7 @@ export default async function AdminLicensesPage({ searchParams }) {
                     <td>{l.neon_warm_users?.name || l.neon_warm_users?.email || '—'}</td>
                     <td className="mono">{l.neon_warm_numbers?.phone_number ?? '—'}</td>
                     <td>{l.neon_warm_plans?.name ?? '—'}</td>
+                    <td className="mono">{l.license_key ?? '—'}</td>
                     <td>{statusBadge(l.status)}</td>
                     <td>{l.expires_at ? new Date(l.expires_at).toLocaleDateString('pt-BR') : '—'}</td>
                     <td>{l.last_validation_at ? new Date(l.last_validation_at).toLocaleString('pt-BR') : '—'}</td>
@@ -163,7 +165,7 @@ export default async function AdminLicensesPage({ searchParams }) {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="empty">Nenhuma licença cadastrada.</td>
+                  <td colSpan={8} className="empty">Nenhuma licença cadastrada.</td>
                 </tr>
               )}
             </tbody>
