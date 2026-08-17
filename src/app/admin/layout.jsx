@@ -11,6 +11,7 @@ async function AdminLayout({ children }) {
     { href: '/admin', label: 'Dashboard', exact: true },
     { href: '/admin/numbers', label: 'Números', exact: false },
     { href: '/admin/licenses', label: 'Licenças', exact: false },
+    { href: '/admin/messages', label: 'Mensagens', exact: false },
     { href: '/admin/logs', label: 'Logs', exact: false },
   ];
 

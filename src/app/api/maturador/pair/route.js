@@ -14,6 +14,9 @@
 //   session_id    Sessão atual do chip (para excluir self)
 //   device_id     Device do chip (para excluir self)
 //   pair_with     (opcional) preferência de parceiro
+//   rotate        (opcional, true) — extensão troca de parceiro a cada
+//                 ciclo: encerra o par já confirmado e procura um novo
+//                 entre todas as contas online.
 //
 // Respostas:
 //   { code: 2, pairWith: "<número>" }   → par encontrado (enviar p/ ele)
@@ -81,6 +84,7 @@ export async function POST(request) {
   const rawPreferred = body?.pair_with || body?.preferred_with || null;
   const sessionId = typeof body?.session_id === 'string' && body.session_id ? body.session_id.trim() : null;
   const deviceId = typeof body?.device_id === 'string' && body.device_id ? body.device_id.trim() : null;
+  const rotate = body?.rotate === true || body?.rotate === 'true';
 
   const normalized = normalizePhone(rawPhone);
   if (!normalized) {
@@ -139,6 +143,7 @@ export async function POST(request) {
     preferredWith: rawPreferred,
     sessionId,
     deviceId,
+    rotate,
   });
 
   if (!result.ok) {

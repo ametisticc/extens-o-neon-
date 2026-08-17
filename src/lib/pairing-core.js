@@ -318,10 +318,18 @@ export async function findEligibleSessionsWithClient(client, { excludeChip = nul
  *  1. Se o chip já tem par ativo, devolve ele. Se o par estava em
  *     'waiting' (o outro lado ainda não tinha chamado /pair), promove
  *     para 'paired'.
+ *     - Com `rotate: true` (extensão troca de parceiro a cada ciclo),
+ *       se o par atual já está CONFIRMADO (ambos os lados), o par é
+ *       encerrado e o chip procura um parceiro novo (passo 3). Se o
+ *       par ainda está em andamento (waiting/paired, ou confirmado só
+ *       por um lado), mantém — não abandonamos um par no meio da troca.
  *  2. Se foi pedido um parceiro específico e ele está elegível e solto,
  *     cria o par direto em 'paired'.
  *  3. Senão, procura uma sessão elegível solta e cria par novo em
  *     'waiting', devolvendo o número dela.
+ *     - Com `rotate: true`, evita re-parear com o ÚLTIMO parceiro se
+ *       houver outra opção (distribui as trocas entre todas as contas
+ *       online). Se só houver o último, ele é aceito (fallback).
  *  4. Senão, sem par disponível.
  *
  * @param {object} client  Client Supabase (injetado).
@@ -330,11 +338,12 @@ export async function findEligibleSessionsWithClient(client, { excludeChip = nul
  * @param {string} [params.preferredWith] Se vier, tenta parear com este número.
  * @param {string} [params.sessionId]     Sessão atual do chip (para excluir self).
  * @param {string} [params.deviceId]      Device do chip (para excluir self).
+ * @param {boolean} [params.rotate]       true → encerra par confirmado e procura novo (a cada ciclo).
  * @returns {Promise<{ ok: boolean, pair?: object, other?: string|null, created?: boolean, reason?: string, diagnostics?: object }>}
  */
 export async function findOrCreatePairWithClient(
   client,
-  { chip, preferredWith = null, sessionId = null, deviceId = null }
+  { chip, preferredWith = null, sessionId = null, deviceId = null, rotate = false }
 ) {
   const normalized = normalizePhone(chip);
   if (!normalized) return { ok: false, reason: 'invalid_phone' };
@@ -356,23 +365,40 @@ export async function findOrCreatePairWithClient(
   const active = await findActivePair(client, normalized);
   if (!active.ok) return { ok: false, reason: active.reason };
   if (active.pair && active.other) {
-    const sideCol = seenColFor(active.pair, normalized);
-    const updates = { [sideCol]: nowIso() };
-    if (active.pair.status === 'waiting') updates.status = 'paired';
-    const { data: refreshed } = await client
-      .from('neon_warm_pairs')
-      .update(updates)
-      .eq('id', active.pair.id)
-      .select('*')
-      .maybeSingle();
-    const pair = refreshed || active.pair;
-    return {
-      ok: true,
-      pair,
-      other: active.other,
-      created: false,
-      diagnostics: { current_session: session ? { id: session.id, status: session.status, online: currentOnline.online, online_reason: currentOnline.reason } : null },
-    };
+    const pair = active.pair;
+    // Rotação a cada ciclo: se o par já foi confirmado por AMBOS os
+    // lados, encerra e procura um parceiro novo (distribui as trocas
+    // entre todas as contas online). Se ainda está em andamento
+    // (waiting/paired, ou confirmado por apenas um lado), mantém —
+    // não abandonamos um par no meio da troca.
+    if (rotate && pair.status === 'confirmed' && pair.confirmed_a === true && pair.confirmed_b === true) {
+      // Encerra o par confirmado e procura um novo (passo 3 abaixo).
+      // `active.other` continua disponível como "parceiro anterior"
+      // para o algoritmo de rotação evitar repetir o mesmo par.
+      await client
+        .from('neon_warm_pairs')
+        .update({ status: 'ended', updated_at: nowIso() })
+        .eq('id', pair.id)
+        .in('status', ['waiting', 'paired', 'confirmed']);
+    } else {
+      const sideCol = seenColFor(pair, normalized);
+      const updates = { [sideCol]: nowIso() };
+      if (pair.status === 'waiting') updates.status = 'paired';
+      const { data: refreshed } = await client
+        .from('neon_warm_pairs')
+        .update(updates)
+        .eq('id', pair.id)
+        .select('*')
+        .maybeSingle();
+      const refreshedPair = refreshed || pair;
+      return {
+        ok: true,
+        pair: refreshedPair,
+        other: active.other,
+        created: false,
+        diagnostics: { current_session: session ? { id: session.id, status: session.status, online: currentOnline.online, online_reason: currentOnline.reason } : null },
+      };
+    }
   }
 
   await expireStalePairs(client);
@@ -400,8 +426,29 @@ export async function findOrCreatePairWithClient(
     excludeSessionId: sessionId,
     excludeDeviceId: deviceId,
   });
-  const candidate = elig.find((e) => e.eligible);
-  if (candidate) return createPair(client, normalized, candidate.phone, 'waiting');
+  const candidates = elig.filter((e) => e.eligible);
+  if (candidates.length === 0) {
+    // Continua para o passo 4 (sem par disponível).
+  } else if (candidates.length === 1) {
+    // Só existe um candidato (além de self) — aceita mesmo que seja o
+    // último parceiro (evita ficar travado sem trocar mensagens).
+    const only = candidates[0];
+    return createPair(client, normalized, only.phone, 'waiting');
+  } else if (rotate && active.pair && active.other) {
+    // Rotação: prefere NÃO repetir o parceiro do ciclo anterior se
+    // houver outra opção online. Se todas as outras opções sumiram,
+    // cai no fallback abaixo.
+    const previous = active.other;
+    const alt = candidates.find((e) => e.phone !== previous);
+    if (alt) return createPair(client, normalized, alt.phone, 'waiting');
+    // fallback: só resta o anterior → aceita
+    return createPair(client, normalized, previous, 'waiting');
+  } else {
+    // Sem rotação, ou sem par anterior: escolhe o candidato com sessão
+    // mais antiga (quem espera há mais tempo tem prioridade).
+    const candidate = candidates[0];
+    return createPair(client, normalized, candidate.phone, 'waiting');
+  }
 
   // ---- 4. Sem par disponível ----
   return {

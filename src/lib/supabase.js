@@ -61,4 +61,5 @@ export const DB = {
   LOGS: 'neon_warm_logs',
   EXTENSION_KEYS: 'neon_warm_extension_keys',
   PAIRS: 'neon_warm_pairs',
+  MESSAGES: 'neon_warm_messages',
 };

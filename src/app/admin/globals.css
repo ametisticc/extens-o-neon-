@@ -309,8 +309,21 @@ table.data-table tr:hover td {
 }
 
 .license-create-form .form-row input,
-.license-create-form .form-row select {
+.license-create-form .form-row select,
+.license-create-form .form-row textarea {
   width: 100%;
+}
+
+.license-create-form .form-row textarea {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 60px;
+  background: #fff;
+  color: var(--text);
 }
 
 .license-create-form .btn {

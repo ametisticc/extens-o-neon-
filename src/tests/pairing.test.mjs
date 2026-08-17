@@ -254,3 +254,66 @@ test('PAIR 9: heartbeat antigo exclui candidato', async () => {
   assert.equal(res.pair, null);
   assert.equal(res.reason, 'no_partner_available');
 });
+
+// ------------------------------------------------------------
+// TESTE 10 — rotate: par confirmado é encerrado e troca de parceiro
+// ------------------------------------------------------------
+test('PAIR 10: rotate=true encerra par confirmado e procura novo', async () => {
+  const db = currentDb;
+  // Adiciona um TERCEIRO número/sessão online (C).
+  db.neon_warm_numbers.push({
+    id: 'number3', user_id: null, phone_number: '5531977776666', phone_number_normalized: '5531977776666', status: 'active', last_seen_at: iso(0), pairing_enabled: true,
+  });
+  db.neon_warm_sessions.push({
+    id: 's3', user_id: 'u3', phone_number_id: 'number3', device_id: 'd3', status: 'active', last_heartbeat_at: iso(0), ended_at: null,
+  });
+
+  // 1) A pareia com B e ambos confirmam.
+  const p1 = await findOrCreatePairWithClient(mockClient, { chip: '5511999999999', deviceId: 'd1' });
+  assert.equal(p1.ok, true);
+  assert.equal(p1.other, '5521988887777');
+  await confirmPairWithClient(mockClient, { chip: '5511999999999', pairWith: '5521988887777' });
+  await confirmPairWithClient(mockClient, { chip: '5521988887777', pairWith: '5511999999999' });
+  assert.equal(db.neon_warm_pairs[0].status, 'confirmed');
+
+  // 2) A chama /pair com rotate=true → NÃO devolve B de novo; devolve C.
+  const p2 = await findOrCreatePairWithClient(mockClient, { chip: '5511999999999', deviceId: 'd1', rotate: true });
+  assert.equal(p2.ok, true);
+  assert.equal(p2.other, '5531977776666');
+  // O par antigo virou ended.
+  assert.equal(db.neon_warm_pairs.find((x) => x.chip_a === '5511999999999' && x.chip_b === '5521988887777').status, 'ended');
+});
+
+// ------------------------------------------------------------
+// TESTE 11 — rotate: par em andamento (não confirmado) é mantido
+// ------------------------------------------------------------
+test('PAIR 11: rotate=true mantém par em andamento (não confirmado)', async () => {
+  const db = currentDb;
+  // A ↔ B confirmado apenas por A (em andamento). rotate não deve abandonar.
+  const p1 = await findOrCreatePairWithClient(mockClient, { chip: '5511999999999', deviceId: 'd1' });
+  assert.equal(p1.ok, true);
+  await confirmPairWithClient(mockClient, { chip: '5511999999999', pairWith: '5521988887777' });
+  assert.equal(db.neon_warm_pairs[0].status, 'waiting'); // B ainda não chamou /pair
+
+  const p2 = await findOrCreatePairWithClient(mockClient, { chip: '5511999999999', deviceId: 'd1', rotate: true });
+  assert.equal(p2.ok, true);
+  assert.equal(p2.other, '5521988887777'); // mantém B
+  assert.equal(db.neon_warm_pairs[0].status, 'paired'); // A chamou /pair de novo → promovido a paired
+});
+
+// ------------------------------------------------------------
+// TESTE 12 — rotate: prefere parceiro DIFERENTE do último, mas aceita
+//           o último como fallback quando é o único online
+// ------------------------------------------------------------
+test('PAIR 12: rotate evita repetir o último parceiro', async () => {
+  const db = currentDb;
+  // A ↔ B confirmado (par completo).
+  const p1 = await findOrCreatePairWithClient(mockClient, { chip: '5511999999999', deviceId: 'd1' });
+  await confirmPairWithClient(mockClient, { chip: '5511999999999', pairWith: '5521988887777' });
+  await confirmPairWithClient(mockClient, { chip: '5521988887777', pairWith: '5511999999999' });
+
+  // Apenas B online (além de A) → rotate cai no fallback e devolve B.
+  const p2 = await findOrCreatePairWithClient(mockClient, { chip: '5511999999999', deviceId: 'd1', rotate: true });
+  assert.equal(p2.ok, true);
+  assert.equal(p2.other, '5521988887777'); // fallback (único online)
+});
