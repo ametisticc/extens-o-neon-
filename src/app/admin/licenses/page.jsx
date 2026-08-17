@@ -2,6 +2,7 @@ import { readAdminSession } from '@/lib/admin.js';
 import { tryGetSupabaseAdmin, DB } from '@/lib/supabase.js';
 import { fmtDate, fmtDateTime } from '@/lib/fmt.js';
 import { AdminSetupWarning } from '@/components/AdminSetupWarning.jsx';
+import ResetDevicesButton from './ResetDevicesButton.jsx';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -165,13 +166,7 @@ export default async function AdminLicensesPage({ searchParams }) {
                           </form>
                         )}
                         {l.status !== 'revoked' && (
-                          <form action="/admin/licenses/action" method="post" onSubmit={(e) => {
-                            if (!confirm('Zerar dispositivos desta licença? Isso encerra sessões ativas e libera o limite do plano.')) e.preventDefault();
-                          }}>
-                            <input type="hidden" name="id" value={l.id} />
-                            <input type="hidden" name="action" value="reset_devices" />
-                            <button type="submit" className="btn btn-sm btn-warning" title="Zerar dispositivos (limite do plano)">Zerar dispositivos</button>
-                          </form>
+                          <ResetDevicesButton licenseId={l.id} />
                         )}
                         {l.status !== 'revoked' && (
                           <form action="/admin/licenses/action" method="post">
