@@ -42,7 +42,12 @@ export function tryGetSupabaseAdmin() {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return null;
   }
-  return getSupabaseAdmin();
+  try {
+    return getSupabaseAdmin();
+  } catch (err) {
+    console.error('[supabase] env inválida, painel fail-safe:', err.message);
+    return null;
+  }
 }
 
 export const DB = {
