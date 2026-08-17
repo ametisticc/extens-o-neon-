@@ -92,12 +92,25 @@ export async function GET() {
       return { status: 'ok', table: DB.NUMBERS, rows: data?.length ?? 0 };
     });
 
-    await check('logs', async () => {
+    await check('logs-sem-embed', async () => {
+      // Query que o painel usa AGORA (sem embed, não depende de FK)
+      const { data, error } = await supabase
+        .from(DB.LOGS)
+        .select('id, event_type, metadata, created_at, user_id, phone_number_id, device_id')
+        .order('created_at', { ascending: false })
+        .limit(10);
+      if (error) return { status: 'erro', table: DB.LOGS, error: { message: error.message, code: error.code } };
+      return { status: 'ok', table: DB.LOGS, rows: data?.length ?? 0 };
+    });
+
+    await check('logs-com-embed', async () => {
+      // A query ANTIGA (com embed). Só funciona depois da migration
+      // 00004 (FKs). Mantida para confirmar que a migration resolveu.
       const { data, error } = await supabase
         .from(DB.LOGS)
         .select('id, event_type, metadata, created_at, user_id, phone_number_id, device_id, neon_warm_users(email, name), neon_warm_numbers(phone_number)')
         .order('created_at', { ascending: false })
-        .limit(10);
+        .limit(5);
       if (error) return { status: 'erro', table: DB.LOGS, error: { message: error.message, code: error.code } };
       return { status: 'ok', table: DB.LOGS, rows: data?.length ?? 0 };
     });

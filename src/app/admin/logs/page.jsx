@@ -48,9 +48,12 @@ export default async function AdminLogsPage({ searchParams }) {
   let fetchError = null;
   if (supabase) {
     try {
+      // Busca sem embed (não depende das FKs de neon_warm_logs).
+      // Sem isso o PostgREST falha com PGRST200 quando a FK ainda
+      // não existe no banco (relação não encontrada no schema cache).
       let query = supabase
         .from(DB.LOGS)
-        .select('id, event_type, metadata, created_at, user_id, phone_number_id, device_id, neon_warm_users(email, name), neon_warm_numbers(phone_number)')
+        .select('id, event_type, metadata, created_at, user_id, phone_number_id, device_id')
         .order('created_at', { ascending: false })
         .limit(limit);
 
@@ -67,6 +70,47 @@ export default async function AdminLogsPage({ searchParams }) {
     } catch (err) {
       console.error('[admin] exceção ao carregar logs:', err);
       fetchError = `Erro inesperado ao carregar dados: ${err.message}`;
+    }
+  }
+
+  // Lookup em lote de usuários e números para preencher a tabela.
+  // Cada lookup é fail-safe: se falhar, mostra o id truncado.
+  let usersById = {};
+  let numbersById = {};
+  if (supabase && logs && logs.length > 0) {
+    const userIds = [...new Set(logs.map((l) => l.user_id).filter(Boolean))];
+    const numberIds = [...new Set(logs.map((l) => l.phone_number_id).filter(Boolean))];
+
+    try {
+      if (userIds.length > 0) {
+        const { data: users, error } = await supabase
+          .from(DB.USERS)
+          .select('id, email, name')
+          .in('id', userIds);
+        if (error) {
+          console.error('[admin] erro ao buscar usuários dos logs:', error.message);
+        } else if (users) {
+          for (const u of users) usersById[u.id] = u;
+        }
+      }
+    } catch (err) {
+      console.error('[admin] exceção ao buscar usuários dos logs:', err.message);
+    }
+
+    try {
+      if (numberIds.length > 0) {
+        const { data: numbers, error } = await supabase
+          .from(DB.NUMBERS)
+          .select('id, phone_number')
+          .in('id', numberIds);
+        if (error) {
+          console.error('[admin] erro ao buscar números dos logs:', error.message);
+        } else if (numbers) {
+          for (const n of numbers) numbersById[n.id] = n;
+        }
+      }
+    } catch (err) {
+      console.error('[admin] exceção ao buscar números dos logs:', err.message);
     }
   }
 
@@ -119,8 +163,8 @@ export default async function AdminLogsPage({ searchParams }) {
                   <tr key={log.id}>
                     <td>{fmtDateTime(log.created_at)}</td>
                     <td>{eventBadge(log.event_type)}</td>
-                    <td className="mono">{log.neon_warm_numbers?.phone_number ?? '—'}</td>
-                    <td>{log.neon_warm_users?.email ?? log.user_id?.slice(0, 8) ?? '—'}</td>
+                    <td className="mono">{numbersById[log.phone_number_id]?.phone_number ?? '—'}</td>
+                    <td>{usersById[log.user_id]?.email ?? usersById[log.user_id]?.name ?? log.user_id?.slice(0, 8) ?? '—'}</td>
                     <td className="muted">
                       {log.event_type === 'validation_failed' && log.metadata?.reason
                         ? `Motivo: ${log.metadata.reason}`
