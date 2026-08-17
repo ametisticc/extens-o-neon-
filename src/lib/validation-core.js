@@ -525,29 +525,8 @@ export async function validateWithClient(supabase, { phoneNumber, extensionId, d
       }
       device = existingDevice;
     } else {
-      // ---- 14. Limite de dispositivos do plano ----
-      const { count, error: countError } = await supabase
-        .from(DB.DEVICES)
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', user.id);
-
-      if (!countError && count >= planRecord.max_devices) {
-        return {
-          authorized: false,
-          reason: REASONS.DEVICE_LIMIT_REACHED,
-          status: 'unauthorized',
-          plan: planRecord.name,
-          expires_at: license.expires_at,
-          number,
-          license,
-          user,
-          subscription,
-          planRecord,
-          device: null,
-          message: 'Limite de dispositivos do plano excedido.',
-        };
-      }
-
+      // ---- 14. (Limite de dispositivos removido — operador quer liberar) ----
+      // Sempre registra um dispositivo novo; não há mais teto por plano.
       const { data: newDevice, error: createError } = await supabase
         .from(DB.DEVICES)
         .insert({
@@ -583,29 +562,7 @@ export async function validateWithClient(supabase, { phoneNumber, extensionId, d
     }
   }
 
-  // ---- Número: verificar limite de números por usuário ----
-  const { count: userNumberCount, error: numberCountError } = await supabase
-    .from(DB.NUMBERS)
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', user.id)
-    .eq('status', 'active');
-
-  if (!numberCountError && userNumberCount > planRecord.max_numbers) {
-    return {
-      authorized: false,
-      reason: REASONS.NUMBER_LIMIT_REACHED,
-      status: 'unauthorized',
-      plan: planRecord.name,
-      expires_at: license.expires_at,
-      number,
-      license,
-      user,
-      subscription,
-      planRecord,
-      device,
-      message: 'Limite de números do plano excedido.',
-    };
-  }
+  // ---- (Limite de números removido — operador quer liberar) ----
 
   // ---- Tudo OK ----
   // Atualiza last_seen_at do número e last_validation_at da licença.

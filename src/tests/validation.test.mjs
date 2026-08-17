@@ -151,20 +151,22 @@ test('TESTE 7: plano sem Neon Warm → authorized = false', async () => {
 });
 
 // ------------------------------------------------------------
-// TESTE 8 — Limite de dispositivos excedido
+// TESTE 8 — Limite de dispositivos REMOVIDO (operador liberou)
+// Mesmo com vários dispositivos de outros devices e max_devices baixo,
+// a validação continua autorizando (sem teto por plano).
 // ------------------------------------------------------------
-test('TESTE 8: limite de dispositivos excedido → authorized = false', async () => {
+test('TESTE 8: limite de dispositivos removido → autoriza mesmo com devices acumulados', async () => {
   const db = makeBaseDb();
   db.neon_warm_plans = [
     { id: 'plan1', name: 'Neon Warm Pro', description: 'Pro', price: 49.9, active: true, neon_warm_enabled: true, max_numbers: 5, max_devices: 1 },
   ];
   db.neon_warm_devices = [
     { id: 'device1', user_id: 'user1', phone_number_id: 'number1', extension_id: 'neon-warm-extension', device_id: 'device-outro', status: 'active', first_seen_at: iso(-1), last_seen_at: iso(-1) },
+    { id: 'device2', user_id: 'user1', phone_number_id: 'number1', extension_id: 'neon-warm-extension', device_id: 'device-outro2', status: 'active', first_seen_at: iso(-1), last_seen_at: iso(-1) },
   ];
   setDb(db);
   const result = await validateWithClient(mockClient, PARAMS);
-  assert.equal(result.authorized, false);
-  assert.equal(result.reason, REASONS.DEVICE_LIMIT_REACHED);
+  assert.equal(result.authorized, true);
 });
 
 // ------------------------------------------------------------
