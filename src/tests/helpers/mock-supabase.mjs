@@ -168,9 +168,11 @@ export function createMockSupabase(getDb) {
         then(resolve, reject) {
           try {
             const result = this._run();
-            resolve(result);
+            // Retorna uma promise encadeável (fiel ao supabase-js):
+            // permite `await`, `.then().catch()`, etc.
+            return Promise.resolve(resolve(result));
           } catch (err) {
-            reject(err);
+            return Promise.reject(reject ? reject(err) : err);
           }
         },
       };

@@ -67,9 +67,12 @@ function nowIso() {
  * @param {string} params.phoneNumber  Telefone bruto (será normalizado).
  * @param {string} params.extensionId  ID da extensão.
  * @param {string} params.deviceId     ID do dispositivo.
+ * @param {object} [params.license]    Licença pré-resolvida (ex.: autenticação
+ *   por chave de licença NW-...). Quando presente, as etapas de licença
+ *   (10-12) usam este registro em vez de buscar pelo número.
  * @returns {Promise<ValidationResult>}
  */
-export async function validateWithClient(supabase, { phoneNumber, extensionId, deviceId }) {
+export async function validateWithClient(supabase, { phoneNumber, extensionId, deviceId, license: preLicense }) {
   const normalized = normalizePhone(phoneNumber);
 
   if (!normalized) {
@@ -365,34 +368,60 @@ export async function validateWithClient(supabase, { phoneNumber, extensionId, d
   }
 
   // ---- 10. Existe licença? ----
-  const { data: license, error: licenseError } = await supabase
-    .from(DB.LICENSES)
-    .select('id, user_id, phone_number_id, plan_id, status, license_key, activated_at, expires_at, last_validation_at, last_extension_id')
-    .eq('phone_number_id', number.id)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (licenseError) {
-    console.error('[validate] erro ao buscar licença:', licenseError.message);
-    return errorResult('internal_error', 'Erro interno ao validar a licença.');
-  }
-
-  if (!license) {
+  // Se a autenticação veio por chave de licença (NW-...), o auth já
+  // resolveu a licença e o número vinculado. Usamos esse registro,
+  // mas garantimos que a licença pertence ao MESMO número que está
+  // sendo validado (isolamento entre clientes).
+  let license = preLicense ?? null;
+  if (license && license.phone_number_id !== number.id) {
     return {
       authorized: false,
       reason: REASONS.LICENSE_NOT_FOUND,
       status: 'unauthorized',
-      plan: planRecord.name,
-      expires_at: subscription.expires_at,
+      plan: null,
+      expires_at: null,
       number,
       license: null,
-      user,
-      subscription,
-      planRecord,
+      user: null,
+      subscription: null,
+      planRecord: null,
       device: null,
-      message: 'Licença não encontrada para este número.',
+      message: 'A licença não pertence a este número.',
     };
+  }
+
+  if (!license) {
+    const { data: fetchedLicense, error: licenseError } = await supabase
+      .from(DB.LICENSES)
+      .select('id, user_id, phone_number_id, plan_id, status, license_key, activated_at, expires_at, last_validation_at, last_extension_id')
+      .eq('phone_number_id', number.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (licenseError) {
+      console.error('[validate] erro ao buscar licença:', licenseError.message);
+      return errorResult('internal_error', 'Erro interno ao validar a licença.');
+    }
+
+    if (!fetchedLicense) {
+      return {
+        authorized: false,
+        reason: REASONS.LICENSE_NOT_FOUND,
+        status: 'unauthorized',
+        plan: planRecord.name,
+        expires_at: subscription.expires_at,
+        number,
+        license: null,
+        user,
+        subscription,
+        planRecord,
+        device: null,
+        message: 'Licença não encontrada para este número.',
+      };
+    }
+
+    license = fetchedLicense;
   }
 
   // ---- 11. Licença está ativa? ----

@@ -12,7 +12,7 @@ export { validateWithClient, REASONS };
  * Valida se um número está autorizado a usar o Neon Warm,
  * usando o client Supabase padrão (service role).
  *
- * @param {{ phoneNumber: string, extensionId: string, deviceId: string }} params
+ * @param {{ phoneNumber: string, extensionId: string, deviceId: string, license?: object }} params
  * @returns {Promise<ValidationResult>}
  */
 export async function validateNeonWarmAccess(params) {

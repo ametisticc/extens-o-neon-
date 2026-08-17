@@ -12,6 +12,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const testFiles = [
   path.join(__dirname, 'phone.test.mjs'),
   path.join(__dirname, 'validation.test.mjs'),
+  path.join(__dirname, 'auth-license.test.mjs'),
   path.join(__dirname, 'pairing.test.mjs'),
   path.join(__dirname, 'pairing.integration.test.mjs'),
 ];

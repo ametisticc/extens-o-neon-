@@ -28,6 +28,7 @@ export async function POST(request) {
     phoneNumber: body.phone_number,
     extensionId: body.extension_id,
     deviceId: body.device_id,
+    license: guard.license ?? undefined,
   });
 
   // Log de validação

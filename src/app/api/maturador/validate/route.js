@@ -42,6 +42,15 @@ export async function POST(request) {
     return jsonOk({ code: 3, ambosConfirmados: false, pairWith: null, message: 'número_invalido' });
   }
 
+  // Isolamento entre clientes (mesma regra do /pair): autenticação por
+  // chave de licença só confirma/pareia o número vinculado à licença.
+  if (guard.authMode === 'license') {
+    const licenseNumber = guard.licenseNumber?.phone_number_normalized ?? null;
+    if (!licenseNumber || licenseNumber !== normalized) {
+      return jsonOk({ code: 3, ambosConfirmados: false, pairWith: null, message: 'numero_nao_pertence_licenca' });
+    }
+  }
+
   const result = confirm
     ? await confirmPair({ chip: normalized, pairWith: rawPairWith })
     : await getActivePair({ chip: normalized });

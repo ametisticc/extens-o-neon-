@@ -94,6 +94,24 @@ export async function POST(request) {
     return jsonOk({ code: 3, pairWith: null, message: 'número_invalido' });
   }
 
+  // Isolamento entre clientes: quando a autenticação foi por chave de
+  // licença (NW-...), o servidor só pareia o NÚMERO vinculado à licença.
+  // O número enviado no corpo é ignorado — evita usar a chave de um
+  // cliente para parear/conectar números de outro.
+  if (guard.authMode === 'license') {
+    const licenseNumber = guard.licenseNumber?.phone_number_normalized ?? null;
+    if (!licenseNumber || licenseNumber !== normalized) {
+      logDebug([
+        'PAIR REQUEST',
+        `phone_number: ${normalized}`,
+        `auth_mode: license`,
+        `license_number: ${licenseNumber || 'null'}`,
+        'RESULT: número não pertence à licença',
+      ]);
+      return jsonOk({ code: 3, pairWith: null, message: 'numero_nao_pertence_licenca' });
+    }
+  }
+
   // O número precisa estar registrado e ativo no banco (foi cadastrado
   // pelo operador como número licenciado). Sem isso, não pareamos.
   const reg = await ensureRegisteredNumber(normalized);

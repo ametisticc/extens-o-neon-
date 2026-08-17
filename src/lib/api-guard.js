@@ -4,7 +4,7 @@
 // Aplica: CORS por origem, autenticação da extensão (API key)
 // e rate limiting. Retorna um Response de erro ou um contexto
 // com dados autenticados.
-import { authenticateExtension, extractExtensionCredentials } from './auth.js';
+import { authenticateExtension, authenticateLicenseKey, extractExtensionCredentials } from './auth.js';
 import { rateLimit } from './rate-limit.js';
 import { getClientIp } from './http.js';
 import { jsonError } from './http.js';
@@ -12,9 +12,16 @@ import { jsonError } from './http.js';
 /**
  * Protege uma rota de API da extensão.
  *
+ * A autenticação aceita DUAS credenciais (mantidas em separado):
+ *   - API key da extensão (`nw_...`, header `X-NeonWarm-Key`) → auth em
+ *     `neon_warm_extension_keys`. O contexto guard.license fica null.
+ *   - Chave de licença (`NW-...`, mesmo header) → auth em
+ *     `neon_warm_licenses`. O contexto guard.license traz a licença + o
+ *     número vinculado (guard.license.number).
+ *
  * @param {Request} request
  * @param {string} routeName  Nome da rota para rate limiting.
- * @returns {Promise<{ ok: true, extensionId: string, apiKey: string, ip: string } | { ok: false, response: Response }>}
+ * @returns {Promise<{ ok: true, extensionId: string, apiKey: string, ip: string, authMode: string, license: any|null, licenseNumber: any|null } | { ok: false, response: Response }>}
  */
 export async function guardExtensionRoute(request, routeName) {
   const ip = getClientIp(request);
@@ -28,7 +35,15 @@ export async function guardExtensionRoute(request, routeName) {
     };
   }
 
-  const auth = await authenticateExtension(credentials);
+  let auth;
+  // Chave de licença (NW-...) → resolve na tabela de licenças.
+  if (/^NW-/i.test(String(credentials.apiKey || '').trim())) {
+    auth = await authenticateLicenseKey(credentials);
+  } else {
+    // API key da extensão (nw_...) → resolve na tabela de extension keys.
+    auth = await authenticateExtension(credentials);
+  }
+
   if (!auth.ok) {
     return {
       ok: false,
@@ -61,5 +76,13 @@ export async function guardExtensionRoute(request, routeName) {
     };
   }
 
-  return { ok: true, extensionId: credentials.extensionId, apiKey: credentials.apiKey, ip };
+  return {
+    ok: true,
+    extensionId: credentials.extensionId,
+    apiKey: credentials.apiKey,
+    ip,
+    authMode: auth.license ? 'license' : 'extension_key',
+    license: auth.license ?? null,
+    licenseNumber: auth.number ?? null,
+  };
 }

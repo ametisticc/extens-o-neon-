@@ -13,9 +13,10 @@ import { sha256, safeEqual } from './crypto.js';
 /**
  * Valida a API key da extensão.
  * @param {{ extensionId?: string, apiKey?: string }} headers
+ * @param {{ supabase?: object }} [deps]  Client injetável (para testes).
  * @returns {Promise<{ ok: boolean; reason?: string; keyRecord?: any }>}
  */
-export async function authenticateExtension({ extensionId, apiKey }) {
+export async function authenticateExtension({ extensionId, apiKey }, deps = {}) {
   if (!extensionId || !apiKey) {
     return { ok: false, reason: 'missing_credentials' };
   }
@@ -25,9 +26,10 @@ export async function authenticateExtension({ extensionId, apiKey }) {
     return { ok: false, reason: 'extension_id_invalid' };
   }
 
+  const supabase = deps.supabase ?? getSupabaseAdmin();
   const keyHash = sha256(apiKey);
 
-  const { data, error } = await getSupabaseAdmin()
+  const { data, error } = await supabase
     .from(DB.EXTENSION_KEYS)
     .select('id, name, extension_id, status')
     .eq('key_hash', keyHash)
@@ -51,7 +53,7 @@ export async function authenticateExtension({ extensionId, apiKey }) {
   }
 
   // Atualiza last_used_at (fire-and-forget, não bloqueia a resposta)
-  getSupabaseAdmin()
+  supabase
     .from(DB.EXTENSION_KEYS)
     .update({ last_used_at: new Date().toISOString() })
     .eq('id', data.id)
@@ -70,4 +72,88 @@ export function extractExtensionCredentials(request) {
   const apiKey = request.headers.get('x-neonwarm-key');
   if (!extensionId || !apiKey) return null;
   return { extensionId: extensionId.trim(), apiKey: apiKey.trim() };
+}
+
+/**
+ * Autentica usando uma CHAVE DE LICENÇA (formato NW-XXXX...).
+ *
+ * A licença é criada pelo painel admin em `neon_warm_licenses.license_key`
+ * e autoriza um NÚMERO específico. Ao autenticar por licença, resolvemos:
+ *   - o registro da licença (status ativo + não expirada)
+ *   - o número vinculado (para validar bindings nas rotas de pareamento)
+ *
+ * Isso permite que o operador use UMA chave gerada pelo painel como
+ * credencial da extensão, sem precisar criar API keys `nw_...` manualmente.
+ *
+ * @param {{ extensionId?: string, apiKey?: string }} headers
+ * @param {{ supabase?: object }} [deps]  Client injetável (para testes).
+ * @returns {Promise<{ ok: boolean; reason?: string; license?: any; number?: any; licenseKey?: string }>}
+ */
+export async function authenticateLicenseKey({ extensionId, apiKey }, deps = {}) {
+  if (!extensionId || !apiKey) {
+    return { ok: false, reason: 'missing_credentials' };
+  }
+
+  const allowedId = process.env.NEON_WARM_EXTENSION_ID;
+  if (allowedId && !safeEqual(extensionId, allowedId)) {
+    return { ok: false, reason: 'extension_id_invalid' };
+  }
+
+  const licenseKey = String(apiKey).trim();
+  // Formato de chave de licença gerada pelo painel: NW-<hex>.
+  if (!/^NW-/i.test(licenseKey)) {
+    return { ok: false, reason: 'invalid_api_key' };
+  }
+
+  const supabase = deps.supabase ?? getSupabaseAdmin();
+
+  const { data: license, error } = await supabase
+    .from(DB.LICENSES)
+    .select(
+      'id, user_id, phone_number_id, plan_id, status, license_key, activated_at, expires_at, last_validation_at, last_extension_id'
+    )
+    .eq('license_key', licenseKey)
+    .maybeSingle();
+
+  if (error) {
+    console.error('[auth] erro ao buscar licença:', error.message);
+    return { ok: false, reason: 'internal_error' };
+  }
+
+  if (!license) {
+    return { ok: false, reason: 'invalid_license_key' };
+  }
+
+  if (license.status === 'revoked' || license.status === 'blocked') {
+    return { ok: false, reason: 'license_inactive' };
+  }
+
+  if (
+    license.status !== 'active' ||
+    (license.expires_at && new Date(license.expires_at).getTime() <= Date.now())
+  ) {
+    return { ok: false, reason: 'license_inactive' };
+  }
+
+  // Resolve o número vinculado (necessário para garantir que a licença
+  // só autoriza o NÚMERO dela — isolamento entre clientes no /pair).
+  const { data: number } = await supabase
+    .from(DB.NUMBERS)
+    .select('id, user_id, phone_number_normalized, status')
+    .eq('id', license.phone_number_id)
+    .maybeSingle();
+
+  if (!number || number.status !== 'active') {
+    return { ok: false, reason: 'license_inactive' };
+  }
+
+  // Registra o último uso (fire-and-forget, não bloqueia a resposta).
+  supabase
+    .from(DB.LICENSES)
+    .update({ last_validation_at: new Date().toISOString(), last_extension_id: extensionId })
+    .eq('id', license.id)
+    .then(() => {})
+    .catch(() => {});
+
+  return { ok: true, license, number, licenseKey };
 }
