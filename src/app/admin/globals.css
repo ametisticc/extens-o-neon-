@@ -1217,6 +1217,615 @@ input[type='radio'] {
 }
 
 /* ============================================================
+   Tela Planos — lista premium (refatoração visual 2026-08-18)
+   ============================================================
+   Leve, com aparência SaaS premium: ícones compactos com tooltip,
+   badges de status com ponto discreto, tabela com separadores sutis
+   e hover suave. Menus/popovers são renderizados no <body> via
+   portal (não cortados pelo scroll da tabela).
+   ============================================================ */
+
+/* ---- Header + botão "+ Novo plano" ---- */
+.plans-header .header-right {
+  align-items: flex-start;
+}
+
+.btn-new-plan {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  border-color: rgba(124, 58, 237, 0.35);
+  color: var(--text);
+  background: rgba(124, 58, 237, 0.08);
+  white-space: nowrap;
+}
+
+.btn-new-plan svg {
+  width: 15px;
+  height: 15px;
+  color: var(--primary-light);
+}
+
+.btn-new-plan:hover {
+  background: rgba(124, 58, 237, 0.16);
+  border-color: rgba(168, 85, 247, 0.55);
+  box-shadow: 0 0 18px -6px rgba(168, 85, 247, 0.55);
+}
+
+/* ---- Ações por linha (ícones compactos) ---- */
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: nowrap;
+}
+
+.popover-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.icon-action {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease,
+    box-shadow 0.15s ease, transform 0.1s ease;
+}
+
+.icon-action svg {
+  width: 15px;
+  height: 15px;
+}
+
+.icon-action:hover,
+.icon-action.on {
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: 0 0 14px -6px rgba(255, 255, 255, 0.5);
+}
+
+.icon-action:active {
+  transform: translateY(1px);
+}
+
+.icon-action.green { color: var(--success); }
+.icon-action.green:hover,
+.icon-action.green.on {
+  background: rgba(34, 197, 94, 0.14);
+  box-shadow: 0 0 14px -6px rgba(34, 197, 94, 0.6);
+}
+
+.icon-action.orange { color: var(--warning); }
+.icon-action.orange:hover,
+.icon-action.orange.on {
+  background: rgba(245, 158, 11, 0.14);
+  box-shadow: 0 0 14px -6px rgba(245, 158, 11, 0.6);
+}
+
+.icon-action.red { color: var(--danger); }
+.icon-action.red:hover,
+.icon-action.red.on {
+  background: rgba(239, 68, 68, 0.14);
+  box-shadow: 0 0 14px -6px rgba(239, 68, 68, 0.6);
+}
+
+.icon-action.neutral { color: var(--text-dim); }
+.icon-action.neutral:hover,
+.icon-action.neutral.on {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+}
+
+/* ---- Tooltips (hover + foco) ---- */
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(3px);
+  background: var(--surface-3);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 95;
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.7);
+}
+
+[data-tooltip]:hover::after,
+[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ---- Dropdown "⋯" (portal no body) ---- */
+.plan-menu {
+  position: fixed;
+  z-index: 80;
+  min-width: 196px;
+  padding: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px -16px rgba(0, 0, 0, 0.8),
+    0 0 0 1px rgba(255, 255, 255, 0.02) inset;
+  animation: pop-menu 0.16s ease;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+
+.menu-item svg {
+  width: 15px;
+  height: 15px;
+  color: var(--text-muted);
+  flex: none;
+}
+
+.menu-item:hover {
+  background: rgba(124, 58, 237, 0.14);
+  color: #fff;
+}
+
+.menu-item:hover svg {
+  color: var(--primary-light);
+}
+
+.menu-item:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+}
+
+/* ---- Backdrop dos popovers ---- */
+.popover-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(3, 3, 10, 0.45);
+  backdrop-filter: blur(2px);
+  animation: fade-in 0.15s ease;
+}
+
+/* ---- Popover (marcar / editar / novo plano) ---- */
+.plan-popover {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(380px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  z-index: 80;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow: 0 24px 64px -20px rgba(0, 0, 0, 0.85);
+  padding: 18px;
+  animation: pop-in 0.18s ease;
+}
+
+.plan-popover .popover-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text);
+  margin-bottom: 14px;
+}
+
+.popover-radio {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 10px;
+  margin-bottom: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.popover-radio:has(input:checked) {
+  border-color: rgba(124, 58, 237, 0.55);
+  background: rgba(124, 58, 237, 0.08);
+}
+
+.popover-radio input[type='radio'] {
+  margin-top: 3px;
+  accent-color: var(--primary);
+}
+
+.popover-radio span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.popover-radio strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.popover-radio em {
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.popover-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+
+.popover-field > span {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.popover-field input {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  font-size: 13.5px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.popover-field input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.18);
+}
+
+.popover-field input::placeholder {
+  color: var(--text-dim);
+}
+
+.popover-hint {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+
+.popover-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text);
+  margin-bottom: 14px;
+  cursor: pointer;
+}
+
+.popover-check input[type='checkbox'] {
+  accent-color: var(--primary);
+  width: 15px;
+  height: 15px;
+}
+
+.plan-popover .btn {
+  width: 100%;
+}
+
+.plan-popover.edit {
+  width: min(400px, calc(100vw - 32px));
+}
+
+/* ---- Status: dot discreto ---- */
+.dot-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.dot-badge i {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+  flex: none;
+}
+
+.dot-badge.green { color: #4ade80; }
+.dot-badge.amber { color: #fbbf24; }
+.dot-badge.red { color: #f87171; }
+.dot-badge.gray { color: var(--text-muted); }
+
+/* ---- Faixa de sugestão global ---- */
+.suggest-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  border-radius: 11px;
+  background: rgba(56, 189, 248, 0.06);
+  border: 1px solid rgba(56, 189, 248, 0.16);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.suggest-icon {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: rgba(56, 189, 248, 0.12);
+  color: var(--info);
+}
+
+.suggest-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.suggest-text strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+/* ---- Cópia de número ---- */
+.phone-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.phone-num {
+  font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.copy-btn {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.copy-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.copy-btn:hover,
+.copy-btn:focus-visible {
+  opacity: 1;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.copy-btn.copied {
+  opacity: 1;
+  color: var(--success);
+}
+
+/* ---- Tabela de planos: lista premium ---- */
+.table-plans {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+
+.table-plans thead th {
+  background: transparent;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 10px 14px 9px;
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.table-plans tbody td {
+  padding: 13px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  vertical-align: middle;
+}
+
+.table-plans tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.table-plans tbody tr:hover td {
+  background: rgba(124, 58, 237, 0.04);
+}
+
+.table-plans th.num,
+.table-plans td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.table-plans th.actions-col {
+  width: 1%;
+  text-align: right;
+}
+
+.table-plans td.actions-col {
+  text-align: right;
+}
+
+/* Plano: limite em destaque + ciclo secundário */
+.plan-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.35;
+}
+
+.plan-limit {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.plan-limit::before {
+  content: 'limite ';
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.plan-cycle {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.plan-cycle::before {
+  content: 'ciclo ';
+  color: var(--text-dim);
+}
+
+/* Notas pequenas junto aos números */
+.mini-note {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+  vertical-align: 1px;
+}
+
+.mini-note.limit {
+  background: rgba(245, 158, 11, 0.14);
+  color: #fbbf24;
+}
+
+/* Última atividade: data + hora separadas */
+.last-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.last-activity .date {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.last-activity .time {
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+/* Sugestão por linha */
+.suggest-cell {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.suggest-cell strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.suggest-empty {
+  font-size: 11.5px;
+}
+
+/* Rodapé da tabela */
+.plans-footer {
+  margin-top: 12px;
+}
+
+/* ---- Animações discretas ---- */
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes pop-menu {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ============================================================
    Responsivo
    ============================================================ */
 @media (max-width: 1100px) {
@@ -1283,6 +1892,62 @@ input[type='radio'] {
 
   h1.page-title {
     font-size: 20px;
+  }
+
+  /* Tabela de planos vira cartões por linha no celular */
+  .table-plans,
+  .table-plans thead,
+  .table-plans tbody,
+  .table-plans tr,
+  .table-plans td {
+    display: block;
+    width: 100%;
+  }
+
+  .table-plans thead {
+    display: none;
+  }
+
+  .table-plans tbody tr {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 12px;
+    padding: 4px 2px;
+  }
+
+  .table-plans tbody tr:hover td {
+    background: transparent;
+  }
+
+  .table-plans tbody td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    text-align: right;
+  }
+
+  .table-plans tbody td::before {
+    content: attr(data-label);
+    font-size: 10.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-dim);
+  }
+
+  .table-plans tbody td:last-child {
+    border-bottom: none;
+  }
+
+  .table-plans tbody td.actions-col {
+    justify-content: flex-end;
+  }
+
+  .plans-header .header-right {
+    align-items: center;
   }
 }
 
