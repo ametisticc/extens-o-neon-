@@ -21,6 +21,14 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 function statusBadge(row) {
+  if (row.penalty_status) {
+    const isBan = row.penalty_status === 'banned';
+    const extra = row.flag_reason ? ` · ${row.flag_reason}` : '';
+    const title = `Marcado em ${fmtDateTime(row.flagged_at)}${extra}`;
+    return isBan
+      ? <span className="badge blocked" title={title}>banido</span>
+      : <span className="badge suspended" title={title}>restrito</span>;
+  }
   if (row.status === 'paused') {
     const reason = row.paused_reason === 'daily_limit' ? 'limite diário' : row.paused_reason || 'manual';
     return <span className="badge blocked" title={`Pausado em ${fmtDateTime(row.paused_at)} · ${reason}`}>pausado</span>;
@@ -55,6 +63,8 @@ export default async function AdminPlansPage({ searchParams }) {
     approved: { text: phone ? `${phone} aprovado — a extensão retoma no próximo ciclo.` : 'Plano aprovado.', type: 'success' },
     applied: { text: phone ? `Sugestão aplicada para ${phone}.` : 'Sugestão aplicada.', type: 'success' },
     no_suggest: { text: 'Sem dados suficientes para sugerir um plano para este número ainda.', type: 'warning' },
+    flagged: { text: phone ? `${phone} marcado. Pareamento suspenso e número excluído dos parceiros.` : 'Número marcado.', type: 'success' },
+    unflag: { text: phone ? `${phone} liberado — pode voltar a parear.` : 'Número liberado.', type: 'success' },
     invalid: { text: 'Dados inválidos. Confira os campos.', type: 'error' },
     error: { text: 'Erro ao salvar. Tente novamente.', type: 'error' },
   };
@@ -78,15 +88,16 @@ export default async function AdminPlansPage({ searchParams }) {
   }
 
   const rows = board?.rows ?? [];
-  const stats = board?.stats ?? { total_connected: 0, with_plan: 0, paused: 0, at_limit: 0 };
+  const stats = board?.stats ?? { total_connected: 0, with_plan: 0, paused: 0, at_limit: 0, flagged: 0 };
 
   return (
     <>
       <h1 className="page-title">Planos de maturação</h1>
       <p className="page-subtitle">
         Limite diário, intervalo de ciclo e pausa por número. As regras são aplicadas no servidor
-        (sem instalar nada nos clientes): quando o limite é atingido ou o plano é pausado, o backend
-        segura o pareamento e a extensão retoma sozinha quando você continuar.
+        (sem instalar nada nos clientes): quando o limite é atingido, o plano é pausado ou o número
+        é marcado como <strong>banido/restrito</strong>, o backend segura o pareamento e a extensão
+        retoma sozinha quando você liberar.
       </p>
 
       <AdminSetupWarning />
@@ -119,6 +130,10 @@ export default async function AdminPlansPage({ searchParams }) {
         <div className="stat-card">
           <div className="label">No limite</div>
           <div className="value">{stats.at_limit}</div>
+        </div>
+        <div className="stat-card">
+          <div className="label">Banidos/Restritos</div>
+          <div className="value warning">{stats.flagged}</div>
         </div>
       </div>
 

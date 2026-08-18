@@ -11,6 +11,7 @@ export default function PlanActions({ row }) {
   const hasPlan = row.status !== 'no_plan';
   const paused = row.status === 'paused';
   const showStart = !hasPlan || paused;
+  const flagged = row.penalty_status === 'banned' || row.penalty_status === 'restricted';
 
   return (
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -58,6 +59,65 @@ export default function PlanActions({ row }) {
           <input type="hidden" name="phone" value={phone} />
           <button type="submit" className="btn btn-warning btn-sm">Pausar</button>
         </form>
+      )}
+      {flagged && (
+        <form
+          action="/admin/plans/action"
+          method="post"
+          onSubmit={(e) => {
+            if (!confirm(`Liberar o número ${phone} (${row.penalty_status})? Ele volta a parear normalmente.`)) {
+              e.preventDefault();
+            }
+          }}
+        >
+          <input type="hidden" name="action" value="unflag" />
+          <input type="hidden" name="phone" value={phone} />
+          <button type="submit" className="btn btn-success btn-sm">✓ Desmarcar</button>
+        </form>
+      )}
+      {!flagged && (
+        <details style={{ display: 'inline-block' }}>
+          <summary className="btn btn-danger btn-sm" style={{ cursor: 'pointer' }}>⚠ Marcar</summary>
+          <form
+            action="/admin/plans/action"
+            method="post"
+            style={{
+              position: 'absolute',
+              zIndex: 10,
+              background: 'var(--bg, #fff)',
+              border: '1px solid #ddd',
+              borderRadius: 8,
+              padding: 10,
+              minWidth: 240,
+              boxShadow: '0 6px 24px rgba(0,0,0,.12)',
+            }}
+          >
+            <input type="hidden" name="action" value="flag" />
+            <input type="hidden" name="phone" value={phone} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <strong style={{ fontSize: 13 }}>Marcar {phone}</strong>
+              <label style={{ fontSize: 12, display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input type="radio" name="flag_status" value="banned" defaultChecked />
+                Banido (WhatsApp suspendeu a conta)
+              </label>
+              <label style={{ fontSize: 12, display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input type="radio" name="flag_status" value="restricted" />
+                Restrito (envios limitados temporariamente)
+              </label>
+              <label style={{ fontSize: 12, fontWeight: 600, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                Motivo (opcional)
+                <input
+                  type="text"
+                  name="flag_reason"
+                  maxLength={120}
+                  placeholder="ex.: ban em 18/08, restrição de envio..."
+                  style={{ width: '100%' }}
+                />
+              </label>
+              <button type="submit" className="btn btn-sm btn-danger">Salvar</button>
+            </div>
+          </form>
+        </details>
       )}
       {(row.suggested_limit || row.suggested_cycle) && (
         <form action="/admin/plans/action" method="post">

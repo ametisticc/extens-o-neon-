@@ -29,6 +29,18 @@ import { normalizePhone } from './phone.js';
 export const PLAN_TABLE = 'neon_warm_maturation_plans';
 export const STATS_TABLE = 'neon_warm_daily_stats';
 
+// Estados de penalidade que o operador marca no painel (WhatsApp baniu ou
+// restringiu a conta). Enquanto marcado, o número NÃO pode parear e NÃO é
+// escolhido como parceiro de ninguém (ver checkPlanAllowsPairing e
+// findEligibleSessionsWithClient).
+export const BANNED = 'banned';
+export const RESTRICTED = 'restricted';
+const PENALTY_STATUSES = [BANNED, RESTRICTED];
+
+export function isPenaltyStatus(status) {
+  return PENALTY_STATUSES.includes(status);
+}
+
 export function todayStr() {
   // Fuso do operador (Brasil). O servidor roda em UTC; usamos o mesmo
   // fuso do painel (America/Sao_Paulo) para a "virada do dia" acontecer
@@ -127,6 +139,12 @@ export async function approvePlanWithClient(client, { phone }) {
   const normalized = normalizePhone(phone);
   if (!normalized) return { ok: false, reason: 'invalid_phone' };
 
+  // Guarda: "Continuar" não pode liberar um número banido/restrito.
+  const existing = await getPlanByPhoneWithClient(client, normalized);
+  if (existing && isPenaltyStatus(existing.status)) {
+    return { ok: false, reason: existing.status === BANNED ? 'conta_banida' : 'conta_restrita', plan: existing };
+  }
+
   const { data, error } = await client
     .from(PLAN_TABLE)
     .update({
@@ -157,6 +175,10 @@ export async function startPlanWithClient(client, { phone, dailyMsgLimit = null,
   if (!normalized) return { ok: false, reason: 'invalid_phone' };
 
   const existing = await getPlanByPhoneWithClient(client, normalized);
+  // Guarda: número banido/restrito não pode ser iniciado por aqui.
+  if (existing && isPenaltyStatus(existing.status)) {
+    return { ok: false, reason: existing.status === BANNED ? 'conta_banida' : 'conta_restrita', plan: existing };
+  }
   const base = {
     phone: normalized,
     dailyMsgLimit: dailyMsgLimit ?? existing?.daily_msg_limit ?? null,
@@ -211,6 +233,112 @@ export async function incrementCyclesWithClient(client, phone) {
     return null;
   }
   return data ? Number(data.cycles_done ?? 0) : null;
+}
+
+/**
+ * Marca um número como BANIDO ou RESTRITO (WhatsApp baniu/restringiu a
+ * conta). Persiste no plano de maturação do número:
+ *   - status = 'banned' | 'restricted'
+ *   - flag_reason = motivo informado pelo operador (opcional)
+ *   - flagged_at / flagged_by = metadados da marcação
+ *
+ * A extensão atual continua chamando /pair; o backend responde 503 e ela
+ * espera/retenta — ou seja, a marcação PARA o pareamento deste número sem
+ * desinstalar nada nos clientes.
+ *
+ * @param {object} client  Client Supabase (injetado).
+ * @param {object} params
+ * @param {string} params.phone    Número (normaliza internamente).
+ * @param {'banned'|'restricted'} params.status  Estado a aplicar.
+ * @param {string|null} [params.reason] Motivo (opcional).
+ * @param {string|null} [params.by]   Quem marcou (email do admin).
+ * @returns {Promise<{ ok: boolean, plan?: object|null, reason?: string, error?: string }>}
+ */
+export async function markFlagPlanWithClient(client, { phone, status, reason = null, by = null }) {
+  const normalized = normalizePhone(phone);
+  if (!normalized) return { ok: false, reason: 'invalid_phone' };
+  if (!PENALTY_STATUSES.includes(status)) return { ok: false, reason: 'invalid_status' };
+
+  // Garante que existe um plano (cria com padrões se não houver).
+  const existing = await getPlanByPhoneWithClient(client, normalized);
+  if (!existing) {
+    const created = await upsertPlanWithClient(client, { phone: normalized });
+    if (!created.ok) return created;
+  }
+
+  const { data, error } = await client
+    .from(PLAN_TABLE)
+    .update({
+      status,
+      paused_at: null,
+      paused_reason: null,
+      flag_reason: reason || null,
+      flagged_at: new Date().toISOString(),
+      flagged_by: by || null,
+    })
+    .eq('phone_number_normalized', normalized)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    console.error('[maturation] erro ao marcar penalidade:', error.message);
+    return { ok: false, reason: 'internal_error', error: error.message };
+  }
+  return { ok: true, plan: data };
+}
+
+/**
+ * Remove a marcação de banido/restrito de um número, voltando ao estado
+ * normal de maturação (active). Se o número tinha limite diário atingido
+ * antes, o operador usa "Continuar" / "Iniciar" normalmente.
+ *
+ * @returns {Promise<{ ok: boolean, plan?: object|null, reason?: string, error?: string }>}
+ */
+export async function clearFlagPlanWithClient(client, { phone }) {
+  const normalized = normalizePhone(phone);
+  if (!normalized) return { ok: false, reason: 'invalid_phone' };
+
+  const { data, error } = await client
+    .from(PLAN_TABLE)
+    .update({
+      status: 'active',
+      paused_at: null,
+      paused_reason: null,
+      flag_reason: null,
+      flagged_at: null,
+      flagged_by: null,
+    })
+    .eq('phone_number_normalized', normalized)
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    console.error('[maturation] erro ao remover penalidade:', error.message);
+    return { ok: false, reason: 'internal_error', error: error.message };
+  }
+  if (!data) return { ok: false, reason: 'no_plan' };
+  return { ok: true, plan: data };
+}
+
+/**
+ * Busca os números com penalidade ativa (banidos/restritos).
+ * Usado pelo pareamento para NÃO escolher esses números como parceiro.
+ * @returns {Promise<string[]>} Lista de telefones normalizados.
+ */
+export async function getFlaggedPhonesWithClient(client) {
+  try {
+    const { data, error } = await client
+      .from(PLAN_TABLE)
+      .select('phone_number_normalized')
+      .in('status', PENALTY_STATUSES);
+    if (error) {
+      console.error('[maturation] erro ao buscar números penalizados:', error.message);
+      return [];
+    }
+    return (data || []).map((p) => p.phone_number_normalized).filter(Boolean);
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -291,6 +419,14 @@ export async function checkPlanAllowsPairingWithClient(client, phone) {
 
   // Desbloqueio automático diário (limite diário expirado).
   plan = await maybeAutoResumeWithClient(client, plan);
+
+  // 0. Banido/restrito pelo WhatsApp → NUNCA pareia (nem mesmo quando
+  //    auto_resume_daily estiver ligado). A extensão recebe 503 e espera;
+  //    só o operador desmarca no painel para liberar.
+  if (isPenaltyStatus(plan.status)) {
+    const reason = plan.status === BANNED ? 'conta_banida' : 'conta_restrita';
+    return { ok: false, reason, plan, stats: await getDailyStatsWithClient(client, normalized) };
+  }
 
   // 1. Pausado manualmente → bloqueia.
   if (plan.status === 'paused') {

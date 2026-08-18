@@ -56,6 +56,7 @@ function makeBaseDb() {
     neon_warm_logs: [],
     neon_warm_extension_keys: [],
     neon_warm_pairs: [],
+    neon_warm_maturation_plans: [],
   };
 }
 
@@ -534,4 +535,33 @@ test('PAIR 21: rotate com todos usados escolhe o parceiro há mais tempo', async
   const res = await findOrCreatePairWithClient(mockClient, { chip: '5511999999999', deviceId: 'd1', rotate: true });
   assert.equal(res.ok, true);
   assert.equal(res.other, '5531977776666');
+});
+
+// ------------------------------------------------------------
+// TESTE 22 — Número BANIDO não é escolhido como parceiro de ninguém
+// ------------------------------------------------------------
+test('PAIR 22: número banido NÃO é candidato (não recebe par)', async () => {
+  const db = currentDb;
+  // Adiciona um terceiro número C online.
+  db.neon_warm_numbers.push({
+    id: 'number3', user_id: null, phone_number: '5531977776666', phone_number_normalized: '5531977776666', status: 'active', last_seen_at: iso(0), pairing_enabled: true,
+  });
+  db.neon_warm_sessions.push({
+    id: 's3', user_id: 'u3', phone_number_id: 'number3', device_id: 'd3', status: 'active', last_heartbeat_at: iso(0), ended_at: null,
+  });
+
+  // Marca B como BANIDO no plano de maturação.
+  db.neon_warm_maturation_plans = [{
+    id: 'planB', phone_number_normalized: '5521988887777', status: 'banned',
+    flag_reason: 'ban', flagged_at: iso(0), flagged_by: 'admin',
+    daily_msg_limit: null, cycle_seconds: null, auto_resume_daily: true,
+    paused_at: null, paused_reason: null, approved_at: null, cycles_done: 0, cycle_limit: null,
+  }];
+
+  // A chama /pair → B está online mas BANIDO → só sobra C.
+  const res = await findOrCreatePairWithClient(mockClient, { chip: '5511999999999', deviceId: 'd1', rotate: true });
+  assert.equal(res.ok, true);
+  assert.equal(res.other, '5531977776666');
+  assert.equal(db.neon_warm_pairs.length, 1);
+  assert.equal(db.neon_warm_pairs[0].chip_b, '5531977776666');
 });

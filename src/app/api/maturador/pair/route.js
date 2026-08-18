@@ -30,6 +30,7 @@ import { findOrCreatePair } from '@/lib/pairing.js';
 import { getSupabaseAdmin, DB } from '@/lib/supabase.js';
 import { normalizePhone } from '@/lib/phone.js';
 import { checkPlanAllowsPairingWithClient } from '@/lib/maturation-plans.js';
+import { shouldAutoRotateWithClient } from '@/lib/rotation-config.js';
 import { readJsonBody, jsonOk, jsonError } from '@/lib/http.js';
 import { logEvent } from '@/lib/logger.js';
 
@@ -85,7 +86,14 @@ export async function POST(request) {
   const rawPreferred = body?.pair_with || body?.preferred_with || null;
   const sessionId = typeof body?.session_id === 'string' && body.session_id ? body.session_id.trim() : null;
   const deviceId = typeof body?.device_id === 'string' && body.device_id ? body.device_id.trim() : null;
-  const rotate = body?.rotate === true || body?.rotate === 'true';
+  const rotateFromExt = body?.rotate === true || body?.rotate === 'true';
+
+  // ROTAÇÃO AUTOMÁTICA (100% backend): quando habilitada no painel e há
+  // contas online suficientes (>= min_online), o servidor força rotate a
+  // cada ciclo — mesmo que a extensão do cliente não mande rotate:true.
+  // Evita que os pares fiquem FIXOS com 3+ números ativos.
+  const autoRotate = await shouldAutoRotateWithClient(getSupabaseAdmin());
+  const rotate = rotateFromExt || autoRotate.rotate;
 
   const normalized = normalizePhone(rawPhone);
   if (!normalized) {

@@ -17,6 +17,7 @@ const testFiles = [
   path.join(__dirname, 'pairing.integration.test.mjs'),
   path.join(__dirname, 'pairing-board.test.mjs'),
   path.join(__dirname, 'maturation-plans.test.mjs'),
+  path.join(__dirname, 'rotation-config.test.mjs'),
 ];
 
 const result = spawnSync(process.execPath, ['--test', ...testFiles], {

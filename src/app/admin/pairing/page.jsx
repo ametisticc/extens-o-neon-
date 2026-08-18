@@ -7,10 +7,12 @@
 import { readAdminSession } from '@/lib/admin.js';
 import { tryGetSupabaseAdmin } from '@/lib/supabase.js';
 import { buildPairingBoardWithClient } from '@/lib/pairing-board.js';
+import { getRotationConfigWithClient } from '@/lib/rotation-config.js';
 import { fmtDateTime } from '@/lib/fmt.js';
 import { AdminSetupWarning } from '@/components/AdminSetupWarning.jsx';
 import PairingAutoRefresh from './PairingAutoRefresh.jsx';
 import PairingActions from './PairingActions.jsx';
+import RotationConfig from './RotationConfig.jsx';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -54,6 +56,7 @@ export default async function AdminPairingPage({ searchParams }) {
 
   const supabase = tryGetSupabaseAdmin();
   let board = null;
+  let rotationConfig = null;
   let fetchError = null;
   if (supabase) {
     try {
@@ -63,6 +66,7 @@ export default async function AdminPairingPage({ searchParams }) {
       } else {
         board = res;
       }
+      rotationConfig = await getRotationConfigWithClient(supabase);
     } catch (err) {
       console.error('[admin] exceção ao montar quadro de pareamento:', err);
       fetchError = `Erro inesperado ao carregar dados: ${err.message}`;
@@ -94,6 +98,12 @@ export default async function AdminPairingPage({ searchParams }) {
           Rotação feita: <strong>{releasedCount ?? 0}</strong> par(es) encerrado(s). Todos os números vão trocar de parceiro no próximo ciclo — a rotação evita repetir quem já interagiu antes.
         </div>
       )}
+      {msg === 'rotation_saved' && (
+        <div className="alert alert-success">
+          Configuração de rotação salva: <strong>{params?.enabled === '1' ? 'ligada' : 'desligada'}</strong>
+          {params?.enabled === '1' ? ` · mínimo de ${params?.min ?? 3} contas online` : ''}.
+        </div>
+      )}
       {msg === 'error' && (
         <div className="alert alert-error">Erro ao liberar pares. Tente novamente.</div>
       )}
@@ -108,6 +118,18 @@ export default async function AdminPairingPage({ searchParams }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
           <span className="muted">Quando um número cai do WhatsApp, o par fica travado e as mensagens param. Use os botões para destravar.</span>
           <PairingActions />
+        </div>
+      </div>
+
+      <div className="card" style={{ padding: '12px 20px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <strong style={{ fontSize: 13 }}>Rotação automática de parceiros</strong>
+          <span className="muted" style={{ fontSize: 12 }}>
+            Com <strong>3+ números ativos</strong>, ligue esta opção para o servidor rotacionar os
+            parceiros a cada ciclo — mesmo que a extensão do cliente não peça. Assim os pares não
+            ficam fixos (ex.: A sempre pareia com B). A rotação evita repetir quem já interagiu.
+          </span>
+          <RotationConfig config={rotationConfig} />
         </div>
       </div>
 

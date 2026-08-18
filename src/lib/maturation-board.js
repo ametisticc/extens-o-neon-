@@ -134,6 +134,8 @@ export async function buildMaturationBoardWithClient(client) {
       const cyclesDone = Number(plan?.cycles_done ?? 0);
       const cycleLimit = plan?.cycle_limit ?? null;
 
+      const penaltyStatus = ['banned', 'restricted'].includes(plan?.status) ? plan.status : null;
+
       rows.push({
         phone_number_normalized: phone,
         plan,
@@ -144,6 +146,10 @@ export async function buildMaturationBoardWithClient(client) {
         cycles_done: cyclesDone,
         at_cycle_limit: Boolean(cycleLimit) && cyclesDone >= cycleLimit,
         status: plan?.status ?? 'no_plan',
+        penalty_status: penaltyStatus,
+        flag_reason: plan?.flag_reason ?? null,
+        flagged_at: plan?.flagged_at ?? null,
+        flagged_by: plan?.flagged_by ?? null,
         auto_resume_daily: plan?.auto_resume_daily ?? true,
         paused_at: plan?.paused_at ?? null,
         paused_reason: plan?.paused_reason ?? null,
@@ -159,10 +165,11 @@ export async function buildMaturationBoardWithClient(client) {
       });
     }
 
-    // Ordena: pausados primeiro, depois por último par mais recente.
+    // Ordena: penalizados (banido/restrito) primeiro, depois pausados,
+    // depois por último par mais recente.
     rows.sort((a, b) => {
-      const pa = a.status === 'paused' ? 0 : 1;
-      const pb = b.status === 'paused' ? 0 : 1;
+      const pa = a.penalty_status ? 0 : a.status === 'paused' ? 1 : 2;
+      const pb = b.penalty_status ? 0 : b.status === 'paused' ? 1 : 2;
       if (pa !== pb) return pa - pb;
       return new Date(b.last_pair_at || 0) - new Date(a.last_pair_at || 0);
     });
@@ -179,6 +186,7 @@ export async function buildMaturationBoardWithClient(client) {
       with_plan: rows.filter((r) => r.status !== 'no_plan').length,
       paused: rows.filter((r) => r.status === 'paused').length,
       at_limit: rows.filter((r) => r.at_limit).length,
+      flagged: rows.filter((r) => r.penalty_status).length,
       suggested_limit: sentValues.length >= 2 ? percentile(sentValues, 75) : null,
       suggested_cycle: healthyGaps.length >= 2 ? median(healthyGaps) : null,
     };

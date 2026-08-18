@@ -17,13 +17,14 @@
 import { readAdminSession } from '@/lib/admin.js';
 import { tryGetSupabaseAdmin } from '@/lib/supabase.js';
 import { releaseStalePairs, rotateAllPairs } from '@/lib/pairing.js';
+import { setRotationConfigWithClient } from '@/lib/rotation-config.js';
 import { logEvent } from '@/lib/logger.js';
 import { redirect } from 'next/navigation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const VALID_ACTIONS = ['release_stale', 'release_number', 'rotate_all'];
+const VALID_ACTIONS = ['release_stale', 'release_number', 'rotate_all', 'save_rotation'];
 
 export async function POST(request) {
   const session = await readAdminSession();
@@ -42,6 +43,35 @@ export async function POST(request) {
   const supabase = tryGetSupabaseAdmin();
   if (!supabase) {
     redirect('/admin?error=invalid');
+  }
+
+  // ------------------------------------------------------------
+  // SALVAR CONFIGURAÇÃO DA ROTAÇÃO AUTOMÁTICA
+  // ------------------------------------------------------------
+  if (action === 'save_rotation') {
+    const enabled = String(formData.get('rotation_enabled') ?? '') === 'true';
+    const minRaw = String(formData.get('min_online') ?? '3').trim();
+
+    const saved = await setRotationConfigWithClient(supabase, {
+      enabled,
+      minOnline: minRaw === '' ? 3 : Number(minRaw),
+    });
+    if (!saved.ok) {
+      redirect('/admin/pairing?msg=error');
+    }
+
+    await logEvent({
+      eventType: 'pairing_rotation_config',
+      metadata: {
+        admin: session,
+        enabled: saved.config.enabled,
+        min_online: saved.config.min_online,
+      },
+    }).catch(() => {});
+
+    redirect(
+      `/admin/pairing?msg=rotation_saved&enabled=${saved.config.enabled ? '1' : '0'}&min=${saved.config.min_online}`
+    );
   }
 
   let result;

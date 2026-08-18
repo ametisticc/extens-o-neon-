@@ -25,6 +25,9 @@ import {
   checkPlanAllowsPairingWithClient,
   bumpDailyStatsWithClient,
   markPairStatsCountedWithClient,
+  markFlagPlanWithClient,
+  clearFlagPlanWithClient,
+  getFlaggedPhonesWithClient,
 } from '../lib/maturation-plans.js';
 import { buildMaturationBoardWithClient } from '../lib/maturation-board.js';
 
@@ -388,4 +391,73 @@ test('PLAN 21: upsert normaliza cycle_limit (>= 1)', async () => {
   assert.equal(res.ok, true);
   const plan = await getPlanByPhoneWithClient(mockClient, '5511999999999');
   assert.equal(plan.cycle_limit, 1);
+});
+
+// ------------------------------------------------------------
+// TESTE 22 — Marcar banido cria plano (se preciso) e bloqueia pareamento
+// ------------------------------------------------------------
+test('PLAN 22: markFlag banned → ok=false conta_banida', async () => {
+  const res = await markFlagPlanWithClient(mockClient, { phone: '5511999999999', status: 'banned', reason: 'ban em teste', by: 'admin@x.com' });
+  assert.equal(res.ok, true);
+  assert.equal(res.plan.status, 'banned');
+  assert.equal(res.plan.flag_reason, 'ban em teste');
+  assert.equal(res.plan.flagged_by, 'admin@x.com');
+  assert.ok(res.plan.flagged_at);
+
+  const chk = await checkPlanAllowsPairingWithClient(mockClient, '5511999999999');
+  assert.equal(chk.ok, false);
+  assert.equal(chk.reason, 'conta_banida');
+});
+
+// ------------------------------------------------------------
+// TESTE 23 — Marcar restrito também bloqueia, com conta_restrita
+// ------------------------------------------------------------
+test('PLAN 23: markFlag restricted → ok=false conta_restrita', async () => {
+  await markFlagPlanWithClient(mockClient, { phone: '5511999999999', status: 'restricted', reason: 'restrição' });
+
+  const chk = await checkPlanAllowsPairingWithClient(mockClient, '5511999999999');
+  assert.equal(chk.ok, false);
+  assert.equal(chk.reason, 'conta_restrita');
+});
+
+// ------------------------------------------------------------
+// TESTE 24 — getFlaggedPhones lista apenas penalizados
+// ------------------------------------------------------------
+test('PLAN 24: getFlaggedPhones retorna banidos e restritos', async () => {
+  await markFlagPlanWithClient(mockClient, { phone: '5511999999999', status: 'banned' });
+  await markFlagPlanWithClient(mockClient, { phone: '5521988887777', status: 'restricted' });
+
+  const flagged = await getFlaggedPhonesWithClient(mockClient);
+  assert.deepEqual([...flagged].sort(), ['5511999999999', '5521988887777'].sort());
+});
+
+// ------------------------------------------------------------
+// TESTE 25 — clearFlag volta para active e libera pareamento
+// ------------------------------------------------------------
+test('PLAN 25: clearFlag libera o número (active + pareia)', async () => {
+  await markFlagPlanWithClient(mockClient, { phone: '5511999999999', status: 'banned' });
+  const cleared = await clearFlagPlanWithClient(mockClient, { phone: '5511999999999' });
+  assert.equal(cleared.ok, true);
+  assert.equal(cleared.plan.status, 'active');
+  assert.equal(cleared.plan.flag_reason, null);
+
+  const chk = await checkPlanAllowsPairingWithClient(mockClient, '5511999999999');
+  assert.equal(chk.ok, true);
+  const flagged = await getFlaggedPhonesWithClient(mockClient);
+  assert.equal(flagged.length, 0);
+});
+
+// ------------------------------------------------------------
+// TESTE 26 — start/approve NÃO liberam número banido/restrito
+// ------------------------------------------------------------
+test('PLAN 26: start e approve bloqueiam número penalizado', async () => {
+  await markFlagPlanWithClient(mockClient, { phone: '5511999999999', status: 'banned' });
+
+  const s = await startPlanWithClient(mockClient, { phone: '5511999999999' });
+  assert.equal(s.ok, false);
+  assert.equal(s.reason, 'conta_banida');
+
+  const a = await approvePlanWithClient(mockClient, { phone: '5511999999999' });
+  assert.equal(a.ok, false);
+  assert.equal(a.reason, 'conta_banida');
 });

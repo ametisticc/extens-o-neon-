@@ -24,6 +24,7 @@
 //   só é atingido quando os DOIS confirmaram via /validate.
 import { normalizePhone } from './phone.js';
 import { isSessionOnline, presenceWindowMs, nowIso } from './pairing-presence.js';
+import { getFlaggedPhonesWithClient } from './maturation-plans.js';
 
 const PAIR_TTL_MS = 30 * 60 * 1000; // 30 min sem chamar /pair => par expira
 
@@ -345,6 +346,10 @@ export async function findEligibleSessionsWithClient(client, { excludeChip = nul
   try {
     const cutoff = new Date(Date.now() - presenceWindowMs()).toISOString();
 
+    // Números marcados como banidos/restritos (WhatsApp baniu/restringiu a
+    // conta). Eles NÃO podem ser escolhidos como parceiro de ninguém.
+    const flaggedPhones = await getFlaggedPhonesWithClient(client);
+
     const { data: sessions, error } = await client
       .from('neon_warm_sessions')
       .select('id, user_id, phone_number_id, device_id, status, last_heartbeat_at, ended_at, started_at')
@@ -370,10 +375,15 @@ export async function findEligibleSessionsWithClient(client, { excludeChip = nul
       if (excludeSessionId && session.id === excludeSessionId) continue; // nunca self por sessão
       if (excludeDeviceId && session.device_id === excludeDeviceId) continue; // nunca self por device
 
+      // Número penalizado (banido/restrito) → nunca candidato, mesmo
+      // online. O operador precisa desmarcar no painel para liberar.
+      const penalty = flaggedPhones.includes(phone) ? 'banido/restrito' : null;
+
       const eligible =
         online.online === true &&
         number.status === 'active' &&
-        number.pairing_enabled !== false; // null → elegível (backward compat)
+        number.pairing_enabled !== false && // null → elegível (backward compat)
+        !penalty;
 
       out.push({
         session,
@@ -382,7 +392,9 @@ export async function findEligibleSessionsWithClient(client, { excludeChip = nul
         online: online.online,
         online_reason: online.reason,
         eligible,
-        ineligible_reason: eligible ? null : online.reason || (number.status !== 'active' ? 'number_not_active' : 'pairing_disabled'),
+        ineligible_reason: eligible
+          ? null
+          : penalty || online.reason || (number.status !== 'active' ? 'number_not_active' : 'pairing_disabled'),
       });
     }
 

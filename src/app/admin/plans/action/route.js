@@ -12,19 +12,30 @@
 //   action = approve     → aprova/continua (despausa) o plano
 //   action = apply_suggest → aplica a sugestão automática ao número
 //                            (se houver sugestão individual)
+//   action = flag        → marca o número como banido/restrito
+//                          (suspende o pareamento + exclui dos parceiros)
+//   action = unflag      → remove a marcação (volta a parear)
 //
 // Mesmo padrão das outras rotas admin (cookie assinado + redirect).
 import { readAdminSession } from '@/lib/admin.js';
 import { tryGetSupabaseAdmin } from '@/lib/supabase.js';
-import { upsertPlanWithClient, pausePlanWithClient, approvePlanWithClient, startPlanWithClient } from '@/lib/maturation-plans.js';
+import {
+  upsertPlanWithClient,
+  pausePlanWithClient,
+  approvePlanWithClient,
+  startPlanWithClient,
+  markFlagPlanWithClient,
+  clearFlagPlanWithClient,
+} from '@/lib/maturation-plans.js';
 import { buildMaturationBoardWithClient } from '@/lib/maturation-board.js';
+import { releaseStalePairsWithClient } from '@/lib/pairing-core.js';
 import { logEvent } from '@/lib/logger.js';
 import { redirect } from 'next/navigation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const VALID_ACTIONS = ['save', 'start', 'pause', 'approve', 'apply_suggest'];
+const VALID_ACTIONS = ['save', 'start', 'pause', 'approve', 'apply_suggest', 'flag', 'unflag'];
 
 export async function POST(request) {
   const session = await readAdminSession();
@@ -116,6 +127,46 @@ export async function POST(request) {
     }
     await logEvent({ eventType: 'plan_approved', metadata: { admin: session, phone } });
     redirect(`/admin/plans?msg=approved&phone=${encodeURIComponent(phone)}`);
+  }
+
+  // ------------------------------------------------------------
+  // MARCAR COMO BANIDO / RESTRITO (WhatsApp penalizou a conta)
+  // ------------------------------------------------------------
+  if (action === 'flag') {
+    const status = String(formData.get('flag_status') ?? 'banned').trim();
+    const reason = String(formData.get('flag_reason') ?? '').trim() || null;
+
+    const result = await markFlagPlanWithClient(supabase, {
+      phone,
+      status: status === 'restricted' ? 'restricted' : 'banned',
+      reason,
+      by: session,
+    });
+    if (!result.ok) {
+      redirect('/admin/plans?msg=error');
+    }
+
+    // Encerra os pares ativos que envolvem o número — para ninguém ficar
+    // preso esperando um parceiro que não vai mais parear.
+    await releaseStalePairsWithClient(supabase, { onlyPhone: phone }).catch(() => {});
+
+    await logEvent({
+      eventType: 'plan_flagged',
+      metadata: { admin: session, phone, flag_status: result.plan?.status, flag_reason: reason },
+    });
+    redirect(`/admin/plans?msg=flagged&phone=${encodeURIComponent(phone)}`);
+  }
+
+  // ------------------------------------------------------------
+  // DESMARCAR (liberar número banido/restrito)
+  // ------------------------------------------------------------
+  if (action === 'unflag') {
+    const result = await clearFlagPlanWithClient(supabase, { phone });
+    if (!result.ok) {
+      redirect('/admin/plans?msg=error');
+    }
+    await logEvent({ eventType: 'plan_unflagged', metadata: { admin: session, phone } });
+    redirect(`/admin/plans?msg=unflag&phone=${encodeURIComponent(phone)}`);
   }
 
   // ------------------------------------------------------------
