@@ -56,6 +56,68 @@ function pickSide(chip, other) {
 }
 
 /**
+ * Retorna os parceiros com quem o chip JÁ interagiu (pares terminados),
+ * do mais recente para o mais antigo. Usado pela rotação para EVITAR
+ * repetir parceiros: os primeiros da lista são os mais recentes.
+ *
+ * @param {object} client  Client Supabase (injetado).
+ * @param {string} chip    Número normalizado do chip.
+ * @param {number} [limit] Máximo de parceiros recentes a considerar.
+ * @returns {Promise<string[]>} Lista de telefones normalizados.
+ */
+export async function recentPartnersWithClient(client, chip, limit = 10) {
+  try {
+    const normalized = normalizePhone(chip);
+    if (!normalized) return [];
+    const { data: rows, error } = await client
+      .from('neon_warm_pairs')
+      .select('chip_a, chip_b')
+      .or(`chip_a.eq.${normalized},chip_b.eq.${normalized}`)
+      .eq('status', 'ended')
+      .order('updated_at', { ascending: false })
+      .limit(limit);
+    if (error) {
+      console.error('[pairing] erro ao buscar parceiros recentes:', error.message);
+      return [];
+    }
+    return (rows || [])
+      .map((p) => (p.chip_a === normalized ? p.chip_b : p.chip_a))
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Escolhe o candidato "menos usado recentemente" para a rotação.
+ *
+ * Garante que todos os chips interajam entre si (round-robin):
+ *   1. Dá prioridade a quem NUNCA foi parceiro (não está em `recent`).
+ *   2. Entre os já usados, escolhe o que está há MAIS TEMPO sem ser
+ *      parceiro (último da lista de recentes).
+ *   3. Fallback: o candidato que espera há mais tempo (heartbeat antigo).
+ *
+ * @param {Array<object>} candidates  Candidatos elegíveis (com `.phone`).
+ * @param {string[]} recent           Parceiros recentes (mais recente primeiro).
+ * @returns {object|null} Candidato escolhido.
+ */
+function pickLeastRecentPartner(candidates, recent) {
+  if (!candidates.length) return null;
+  // 1) Nunca foi parceiro → prioridade total (ordem de espera = heartbeat antigo).
+  const fresh = candidates.filter((c) => !recent.includes(c.phone));
+  if (fresh.length > 0) return fresh[0];
+  // 2) Todos já foram parceiros → escolhe o que foi usado há mais tempo.
+  //    A lista `recent` está do mais recente para o mais antigo; o último
+  //    elemento que ainda é candidato é o menos recente.
+  for (let i = recent.length - 1; i >= 0; i--) {
+    const found = candidates.find((c) => c.phone === recent[i]);
+    if (found) return found;
+  }
+  // 3) Fallback: o que espera há mais tempo.
+  return candidates[0];
+}
+
+/**
  * Verifica se um número está ONLINE (tem sessão ativa + heartbeat recente).
  * Mesma regra do painel (isSessionOnline) — usada para não manter pares
  * com um parceiro que caiu offline.
@@ -484,18 +546,19 @@ export async function findOrCreatePairWithClient(
     // último parceiro (evita ficar travado sem trocar mensagens).
     const only = candidates[0];
     return createPair(client, normalized, only.phone, 'waiting');
-  } else if (rotate && active.pair && active.other) {
-    // Rotação: prefere NÃO repetir o parceiro do ciclo anterior se
-    // houver outra opção online. Se todas as outras opções sumiram,
-    // cai no fallback abaixo.
-    const previous = active.other;
-    const alt = candidates.find((e) => e.phone !== previous);
-    if (alt) return createPair(client, normalized, alt.phone, 'waiting');
-    // fallback: só resta o anterior → aceita
-    return createPair(client, normalized, previous, 'waiting');
+  } else if (rotate) {
+    // Rotação: garante que TODOS os chips interajam entre si (round-robin).
+    // Usa o histórico de pares terminados para EVITAR repetir parceiro —
+    // prioridade para quem nunca foi parceiro, depois para quem está há
+    // mais tempo sem interagir. (Não repete o parceiro do ciclo anterior
+    // quando há outra opção.)
+    const recent = await recentPartnersWithClient(client, normalized, 10);
+    const chosen = pickLeastRecentPartner(candidates, recent);
+    if (chosen) return createPair(client, normalized, chosen.phone, 'waiting');
+    // fallback: nenhum candidato → cai no passo 4
   } else {
-    // Sem rotação, ou sem par anterior: escolhe o candidato com sessão
-    // mais antiga (quem espera há mais tempo tem prioridade).
+    // Sem rotação: escolhe o candidato com sessão mais antiga (quem
+    // espera há mais tempo tem prioridade).
     const candidate = candidates[0];
     return createPair(client, normalized, candidate.phone, 'waiting');
   }
@@ -689,6 +752,52 @@ export async function releaseStalePairsWithClient(client, { onlyPhone = null } =
   } catch (err) {
     console.error('[pairing] exceção em releaseStalePairs:', err.message);
     return { ok: false, reason: 'internal_error', error: err.message, released: 0 };
+  }
+}
+
+/**
+ * Rotaciona TODOS os pares ativos de uma vez (painel admin).
+ *
+ * Diferente de releaseStalePairs (que só encerra pares com lado offline),
+ * esta função encerra TODOS os pares em status waiting/paired/confirmed,
+ * mesmo que ambos os lados estejam online. No próximo ciclo de /pair
+ * (com a extensão já enviando rotate:true), os chips formam pares novos.
+ *
+ * Uso: botão "Rotacionar todos os pares" — forçar troca geral de parceiro.
+ *
+ * @param {object} client  Client Supabase (injetado).
+ * @returns {Promise<{ ok: boolean, rotated: number, reason?: string, error?: string }>}
+ */
+export async function rotateAllPairsWithClient(client) {
+  try {
+    const { data: pairs, error } = await client
+      .from('neon_warm_pairs')
+      .select('id')
+      .in('status', ['waiting', 'paired', 'confirmed']);
+    if (error) {
+      console.error('[pairing] erro ao listar pares para rotação:', error.message);
+      return { ok: false, reason: 'internal_error', error: error.message, rotated: 0 };
+    }
+
+    const ids = (pairs || []).map((p) => p.id);
+    let rotated = 0;
+    if (ids.length > 0) {
+      const { error: updErr } = await client
+        .from('neon_warm_pairs')
+        .update({ status: 'ended', updated_at: nowIso() })
+        .in('id', ids)
+        .in('status', ['waiting', 'paired', 'confirmed']);
+      if (updErr) {
+        console.error('[pairing] erro ao rotacionar pares:', updErr.message);
+        return { ok: false, reason: 'internal_error', error: updErr.message, rotated: 0 };
+      }
+      rotated = ids.length;
+    }
+
+    return { ok: true, rotated };
+  } catch (err) {
+    console.error('[pairing] exceção em rotateAllPairs:', err.message);
+    return { ok: false, reason: 'internal_error', error: err.message, rotated: 0 };
   }
 }
 

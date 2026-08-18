@@ -89,6 +89,11 @@ export default async function AdminPairingPage({ searchParams }) {
           Pares liberados: <strong>{releasedCount ?? 0}</strong> par(es) com um dos lados offline foi encerrado. Os chips online vão formar novos pares no próximo ciclo.
         </div>
       )}
+      {msg === 'rotated' && (
+        <div className="alert alert-success">
+          Rotação feita: <strong>{releasedCount ?? 0}</strong> par(es) encerrado(s). Todos os números vão trocar de parceiro no próximo ciclo — a rotação evita repetir quem já interagiu antes.
+        </div>
+      )}
       {msg === 'error' && (
         <div className="alert alert-error">Erro ao liberar pares. Tente novamente.</div>
       )}

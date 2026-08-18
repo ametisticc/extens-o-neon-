@@ -21,6 +21,8 @@ import {
   getActivePairWithClient,
   releasePairWithClient,
   releaseStalePairsWithClient,
+  rotateAllPairsWithClient,
+  recentPartnersWithClient,
 } from '../lib/pairing-core.js';
 
 let currentDb = {};
@@ -420,4 +422,116 @@ test('PAIR 16: releaseStalePairs com onlyPhone tira só o número do pareamento'
   assert.equal(res.ok, true);
   assert.equal(res.released, 1);
   assert.equal(db.neon_warm_pairs[0].status, 'ended');
+});
+
+// ------------------------------------------------------------
+// TESTE 17 — rotateAllPairs encerra TODOS os pares ativos (mesmo online)
+// ------------------------------------------------------------
+test('PAIR 17: rotateAllPairs encerra todos os pares ativos de uma vez', async () => {
+  const db = currentDb;
+  // Dois pares ativos, ambos com lados online (A↔B e C↔D).
+  db.neon_warm_numbers.push(
+    { id: 'number3', user_id: null, phone_number: '5531977776666', phone_number_normalized: '5531977776666', status: 'active', last_seen_at: iso(0), pairing_enabled: true },
+    { id: 'number4', user_id: null, phone_number: '5541966665555', phone_number_normalized: '5541966665555', status: 'active', last_seen_at: iso(0), pairing_enabled: true },
+  );
+  db.neon_warm_sessions.push(
+    { id: 's3', user_id: 'u3', phone_number_id: 'number3', device_id: 'd3', status: 'active', last_heartbeat_at: iso(0), ended_at: null },
+    { id: 's4', user_id: 'u4', phone_number_id: 'number4', device_id: 'd4', status: 'active', last_heartbeat_at: iso(0), ended_at: null },
+  );
+  db.neon_warm_pairs = [
+    { id: 'pair1', chip_a: '5511999999999', chip_b: '5521988887777', status: 'paired',
+      confirmed_a: false, confirmed_b: false, last_seen_a: iso(0), last_seen_b: iso(0),
+      confirmed_at: null, created_at: iso(0), updated_at: iso(0) },
+    { id: 'pair2', chip_a: '5531977776666', chip_b: '5541966665555', status: 'confirmed',
+      confirmed_a: true, confirmed_b: true, last_seen_a: iso(0), last_seen_b: iso(0),
+      confirmed_at: iso(0), created_at: iso(0), updated_at: iso(0) },
+  ];
+
+  const res = await rotateAllPairsWithClient(mockClient);
+  assert.equal(res.ok, true);
+  assert.equal(res.rotated, 2);
+  assert.equal(db.neon_warm_pairs[0].status, 'ended');
+  assert.equal(db.neon_warm_pairs[1].status, 'ended');
+});
+
+// ------------------------------------------------------------
+// TESTE 18 — rotateAllPairs sem pares ativos → rotated 0
+// ------------------------------------------------------------
+test('PAIR 18: rotateAllPairs sem pares ativos retorna rotated 0', async () => {
+  const res = await rotateAllPairsWithClient(mockClient);
+  assert.equal(res.ok, true);
+  assert.equal(res.rotated, 0);
+});
+
+// ------------------------------------------------------------
+// TESTE 19 — recentPartners retorna os parceiros terminados (mais recente primeiro)
+// ------------------------------------------------------------
+test('PAIR 19: recentPartners retorna parceiros terminados do mais recente', async () => {
+  const db = currentDb;
+  db.neon_warm_pairs = [
+    { id: 'p1', chip_a: '5511999999999', chip_b: '5521988887777', status: 'ended',
+      last_seen_a: iso(-60000), last_seen_b: iso(-60000), updated_at: iso(-60000), created_at: iso(-60000) },
+    { id: 'p2', chip_a: '5531977776666', chip_b: '5511999999999', status: 'ended',
+      last_seen_a: iso(-120000), last_seen_b: iso(-120000), updated_at: iso(-120000), created_at: iso(-120000) },
+  ];
+  const res = await recentPartnersWithClient(mockClient, '5511999999999');
+  assert.equal(res.length, 2);
+  assert.equal(res[0], '5521988887777'); // mais recente
+  assert.equal(res[1], '5531977776666');
+});
+
+// ------------------------------------------------------------
+// TESTE 20 — rotate evita repetir parceiro usando histórico de pares terminados
+// ------------------------------------------------------------
+test('PAIR 20: rotate prefere parceiro que NUNCA interagiu (round-robin)', async () => {
+  const db = currentDb;
+  // Três números online: A, B, C.
+  db.neon_warm_numbers.push({
+    id: 'number3', user_id: null, phone_number: '5531977776666', phone_number_normalized: '5531977776666', status: 'active', last_seen_at: iso(0), pairing_enabled: true,
+  });
+  db.neon_warm_sessions.push({
+    id: 's3', user_id: 'u3', phone_number_id: 'number3', device_id: 'd3', status: 'active', last_heartbeat_at: iso(0), ended_at: null,
+  });
+
+  // A já interagiu com B no passado (par terminado) → rotate deve escolher C.
+  db.neon_warm_pairs = [{
+    id: 'pAB', chip_a: '5511999999999', chip_b: '5521988887777', status: 'ended',
+    confirmed_a: true, confirmed_b: true, last_seen_a: iso(-60000), last_seen_b: iso(-60000),
+    confirmed_at: iso(-60000), created_at: iso(-60000), updated_at: iso(-60000),
+  }];
+
+  // A chama /pair com rotate → não pode ser B (já interagiu); deve ser C.
+  const res = await findOrCreatePairWithClient(mockClient, { chip: '5511999999999', deviceId: 'd1', rotate: true });
+  assert.equal(res.ok, true);
+  assert.equal(res.other, '5531977776666');
+  assert.equal(res.pair.status, 'waiting');
+});
+
+// ------------------------------------------------------------
+// TESTE 21 — rotate com todos já usados → escolhe o menos recente
+// ------------------------------------------------------------
+test('PAIR 21: rotate com todos usados escolhe o parceiro há mais tempo', async () => {
+  const db = currentDb;
+  // Três números: A, B, C.
+  db.neon_warm_numbers.push({
+    id: 'number3', user_id: null, phone_number: '5531977776666', phone_number_normalized: '5531977776666', status: 'active', last_seen_at: iso(0), pairing_enabled: true,
+  });
+  db.neon_warm_sessions.push({
+    id: 's3', user_id: 'u3', phone_number_id: 'number3', device_id: 'd3', status: 'active', last_heartbeat_at: iso(0), ended_at: null,
+  });
+
+  // A já interagiu com B (recente) e com C (antigo).
+  db.neon_warm_pairs = [
+    { id: 'pAB', chip_a: '5511999999999', chip_b: '5521988887777', status: 'ended',
+      confirmed_a: true, confirmed_b: true, last_seen_a: iso(-60000), last_seen_b: iso(-60000),
+      confirmed_at: iso(-60000), created_at: iso(-60000), updated_at: iso(-60000) },
+    { id: 'pAC', chip_a: '5531977776666', chip_b: '5511999999999', status: 'ended',
+      confirmed_a: true, confirmed_b: true, last_seen_a: iso(-300000), last_seen_b: iso(-300000),
+      confirmed_at: iso(-300000), created_at: iso(-300000), updated_at: iso(-300000) },
+  ];
+
+  // Ambos já foram usados. rotate deve escolher C (menos recente).
+  const res = await findOrCreatePairWithClient(mockClient, { chip: '5511999999999', deviceId: 'd1', rotate: true });
+  assert.equal(res.ok, true);
+  assert.equal(res.other, '5531977776666');
 });

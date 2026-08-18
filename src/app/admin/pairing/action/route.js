@@ -9,18 +9,21 @@
 //   action = release_number  → encerra os pares ativos que envolvem um
 //                              número específico (tira o número do
 //                              pareamento na hora).
+//   action = rotate_all      → encerra TODOS os pares ativos de uma vez
+//                              (mesmo com os dois lados online) — força a
+//                              rotação geral de parceiros no próximo ciclo.
 //
 // Segue o padrão das outras rotas admin (cookie assinado + redirect).
 import { readAdminSession } from '@/lib/admin.js';
 import { tryGetSupabaseAdmin } from '@/lib/supabase.js';
-import { releaseStalePairs } from '@/lib/pairing.js';
+import { releaseStalePairs, rotateAllPairs } from '@/lib/pairing.js';
 import { logEvent } from '@/lib/logger.js';
 import { redirect } from 'next/navigation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const VALID_ACTIONS = ['release_stale', 'release_number'];
+const VALID_ACTIONS = ['release_stale', 'release_number', 'rotate_all'];
 
 export async function POST(request) {
   const session = await readAdminSession();
@@ -44,6 +47,8 @@ export async function POST(request) {
   let result;
   if (action === 'release_stale') {
     result = await releaseStalePairs({});
+  } else if (action === 'rotate_all') {
+    result = await rotateAllPairs();
   } else {
     // release_number: exige um telefone.
     if (!phone) redirect('/admin/pairing?msg=invalid');
@@ -56,14 +61,18 @@ export async function POST(request) {
   }
 
   await logEvent({
-    eventType: 'pairing_release',
+    eventType: action === 'rotate_all' ? 'pairing_rotate' : 'pairing_release',
     metadata: {
       admin: session,
       action,
       phone: phone || null,
       released: result.released ?? 0,
+      rotated: result.rotated ?? 0,
     },
   }).catch(() => {});
 
+  if (action === 'rotate_all') {
+    redirect(`/admin/pairing?msg=rotated&count=${result.rotated ?? 0}`);
+  }
   redirect(`/admin/pairing?msg=released&count=${result.released ?? 0}`);
 }

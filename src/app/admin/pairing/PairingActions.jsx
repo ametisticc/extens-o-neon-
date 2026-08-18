@@ -40,6 +40,18 @@ export default function PairingActions() {
         <input type="hidden" name="phone" value="" />
         <button type="submit" className="btn btn-sm">Tirar número do pareamento</button>
       </form>
+      <form
+        action="/admin/pairing/action"
+        method="post"
+        onSubmit={(e) => {
+          if (!confirm('Rotacionar TODOS os pares ativos agora? Todos os números vão trocar de parceiro no próximo ciclo — as mensagens em andamento são interrompidas.')) {
+            e.preventDefault();
+          }
+        }}
+      >
+        <input type="hidden" name="action" value="rotate_all" />
+        <button type="submit" className="btn btn-primary btn-sm">Rotacionar todos os pares</button>
+      </form>
     </div>
   );
 }
