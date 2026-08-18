@@ -20,6 +20,7 @@ import {
   confirmPairWithClient,
   getActivePairWithClient,
   releasePairWithClient,
+  releaseStalePairsWithClient,
 } from '../lib/pairing-core.js';
 
 let currentDb = {};
@@ -316,4 +317,107 @@ test('PAIR 12: rotate evita repetir o último parceiro', async () => {
   const p2 = await findOrCreatePairWithClient(mockClient, { chip: '5511999999999', deviceId: 'd1', rotate: true });
   assert.equal(p2.ok, true);
   assert.equal(p2.other, '5521988887777'); // fallback (único online)
+});
+
+// ------------------------------------------------------------
+// TESTE 13 — Par com parceiro offline é encerrado no /pair
+// ------------------------------------------------------------
+test('PAIR 13: A chama /pair com parceiro offline → encerra par e procura novo', async () => {
+  const db = currentDb;
+  // Adiciona C (número 3) online.
+  db.neon_warm_numbers.push({
+    id: 'number3', user_id: null, phone_number: '5531977776666', phone_number_normalized: '5531977776666', status: 'active', last_seen_at: iso(0), pairing_enabled: true,
+  });
+  db.neon_warm_sessions.push({
+    id: 's3', user_id: 'u3', phone_number_id: 'number3', device_id: 'd3', status: 'active', last_heartbeat_at: iso(0), ended_at: null,
+  });
+
+  // A ↔ B pareados, mas B caiu (heartbeat antigo).
+  db.neon_warm_sessions.find((s) => s.id === 's2').last_heartbeat_at = iso(-10 * 60 * 1000);
+  db.neon_warm_pairs = [{
+    id: 'pair1', chip_a: '5511999999999', chip_b: '5521988887777', status: 'paired',
+    confirmed_a: false, confirmed_b: false, last_seen_a: iso(0), last_seen_b: iso(0),
+    confirmed_at: null, created_at: iso(0), updated_at: iso(0),
+  }];
+
+  // A chama /pair (mesmo sem rotate): o parceiro B está offline → encerra
+  // o par e pareia com C.
+  const res = await findOrCreatePairWithClient(mockClient, { chip: '5511999999999', deviceId: 'd1' });
+  assert.equal(res.ok, true);
+  assert.equal(res.other, '5531977776666');
+  assert.equal(db.neon_warm_pairs.find((x) => x.id === 'pair1').status, 'ended');
+});
+
+// ------------------------------------------------------------
+// TESTE 14 — Candidato que já está em outro par ativo é excluído
+// ------------------------------------------------------------
+test('PAIR 14: exclui candidato que já está em outro par ativo', async () => {
+  const db = currentDb;
+  // C já está pareado com D (número 4).
+  db.neon_warm_numbers.push(
+    { id: 'number3', user_id: null, phone_number: '5531977776666', phone_number_normalized: '5531977776666', status: 'active', last_seen_at: iso(0), pairing_enabled: true },
+    { id: 'number4', user_id: null, phone_number: '5541966665555', phone_number_normalized: '5541966665555', status: 'active', last_seen_at: iso(0), pairing_enabled: true },
+  );
+  db.neon_warm_sessions.push(
+    { id: 's3', user_id: 'u3', phone_number_id: 'number3', device_id: 'd3', status: 'active', last_heartbeat_at: iso(0), ended_at: null },
+    { id: 's4', user_id: 'u4', phone_number_id: 'number4', device_id: 'd4', status: 'active', last_heartbeat_at: iso(0), ended_at: null },
+  );
+  // Par C ↔ D ativo.
+  db.neon_warm_pairs = [{
+    id: 'pairCD', chip_a: '5531977776666', chip_b: '5541966665555', status: 'paired',
+    confirmed_a: false, confirmed_b: false, last_seen_a: iso(0), last_seen_b: iso(0),
+    confirmed_at: null, created_at: iso(0), updated_at: iso(0),
+  }];
+
+  // A chama /pair. B é o único candidato livre (C está ocupado com D).
+  const res = await findOrCreatePairWithClient(mockClient, { chip: '5511999999999', deviceId: 'd1' });
+  assert.equal(res.ok, true);
+  assert.equal(res.other, '5521988887777');
+  assert.equal(db.neon_warm_pairs.filter((p) => p.status !== 'ended').length, 2);
+});
+
+// ------------------------------------------------------------
+// TESTE 15 — releaseStalePairs encerra pares com lado offline
+// ------------------------------------------------------------
+test('PAIR 15: releaseStalePairs encerra par com lado offline', async () => {
+  const db = currentDb;
+  // B caiu (heartbeat antigo).
+  db.neon_warm_sessions.find((s) => s.id === 's2').last_heartbeat_at = iso(-10 * 60 * 1000);
+  // Par A↔B ativo.
+  db.neon_warm_pairs = [{
+    id: 'pair1', chip_a: '5511999999999', chip_b: '5521988887777', status: 'paired',
+    confirmed_a: false, confirmed_b: false, last_seen_a: iso(0), last_seen_b: iso(0),
+    confirmed_at: null, created_at: iso(0), updated_at: iso(0),
+  }];
+
+  const res = await releaseStalePairsWithClient(mockClient, {});
+  assert.equal(res.ok, true);
+  assert.equal(res.released, 1);
+  assert.equal(db.neon_warm_pairs[0].status, 'ended');
+});
+
+// ------------------------------------------------------------
+// TESTE 16 — releaseStalePairs(onlyPhone) só encerra pares do número
+// ------------------------------------------------------------
+test('PAIR 16: releaseStalePairs com onlyPhone tira só o número do pareamento', async () => {
+  const db = currentDb;
+  // B e C online.
+  db.neon_warm_numbers.push({
+    id: 'number3', user_id: null, phone_number: '5531977776666', phone_number_normalized: '5531977776666', status: 'active', last_seen_at: iso(0), pairing_enabled: true,
+  });
+  db.neon_warm_sessions.push({
+    id: 's3', user_id: 'u3', phone_number_id: 'number3', device_id: 'd3', status: 'active', last_heartbeat_at: iso(0), ended_at: null,
+  });
+  // Dois pares: A↔B e C↔D? Não — C não tem par. Vamos fazer A↔B ativo e C sem par.
+  db.neon_warm_pairs = [{
+    id: 'pair1', chip_a: '5511999999999', chip_b: '5521988887777', status: 'paired',
+    confirmed_a: false, confirmed_b: false, last_seen_a: iso(0), last_seen_b: iso(0),
+    confirmed_at: null, created_at: iso(0), updated_at: iso(0),
+  }];
+
+  // Tira o B do pareamento: encerra o par A↔B.
+  const res = await releaseStalePairsWithClient(mockClient, { onlyPhone: '5521988887777' });
+  assert.equal(res.ok, true);
+  assert.equal(res.released, 1);
+  assert.equal(db.neon_warm_pairs[0].status, 'ended');
 });

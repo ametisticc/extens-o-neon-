@@ -18,6 +18,7 @@ import {
   releasePairWithClient,
   getActivePairWithClient,
   findEligibleSessionsWithClient,
+  releaseStalePairsWithClient,
   PAIR_TTL_MS,
 } from './pairing-core.js';
 
@@ -41,4 +42,8 @@ export async function getActivePair(params) {
 
 export async function findEligibleSessions(params) {
   return findEligibleSessionsWithClient(getSupabaseAdmin(), params);
+}
+
+export async function releaseStalePairs(params) {
+  return releaseStalePairsWithClient(getSupabaseAdmin(), params);
 }

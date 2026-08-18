@@ -10,6 +10,7 @@ import { buildPairingBoardWithClient } from '@/lib/pairing-board.js';
 import { fmtDateTime } from '@/lib/fmt.js';
 import { AdminSetupWarning } from '@/components/AdminSetupWarning.jsx';
 import PairingAutoRefresh from './PairingAutoRefresh.jsx';
+import PairingActions from './PairingActions.jsx';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -43,9 +44,13 @@ function pairBadge(row) {
   return <span className={`badge ${map[row.pair_status] || 'active'}`}>{row.pair_status}</span>;
 }
 
-export default async function AdminPairingPage() {
+export default async function AdminPairingPage({ searchParams }) {
   const session = await readAdminSession();
   if (!session) return null; // layout renderiza o login
+
+  const params = await searchParams;
+  const msg = params?.msg;
+  const releasedCount = params?.count;
 
   const supabase = tryGetSupabaseAdmin();
   let board = null;
@@ -79,11 +84,27 @@ export default async function AdminPairingPage() {
 
       <AdminSetupWarning />
 
+      {msg === 'released' && (
+        <div className="alert alert-success">
+          Pares liberados: <strong>{releasedCount ?? 0}</strong> par(es) com um dos lados offline foi encerrado. Os chips online vão formar novos pares no próximo ciclo.
+        </div>
+      )}
+      {msg === 'error' && (
+        <div className="alert alert-error">Erro ao liberar pares. Tente novamente.</div>
+      )}
+
       {fetchError && (
         <div className="alert alert-error" style={{ fontSize: 13, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
           <strong>Erro ao carregar o painel:</strong> {fetchError}
         </div>
       )}
+
+      <div className="card" style={{ padding: '12px 20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+          <span className="muted">Quando um número cai do WhatsApp, o par fica travado e as mensagens param. Use os botões para destravar.</span>
+          <PairingActions />
+        </div>
+      </div>
 
       <div className="grid-cards">
         <div className="stat-card">

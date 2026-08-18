@@ -56,6 +56,28 @@ function pickSide(chip, other) {
 }
 
 /**
+ * Verifica se um número está ONLINE (tem sessão ativa + heartbeat recente).
+ * Mesma regra do painel (isSessionOnline) — usada para não manter pares
+ * com um parceiro que caiu offline.
+ */
+async function isChipOnlineWithClient(client, phone) {
+  try {
+    if (!phone) return false;
+    const number = await loadNumberByPhone(client, phone);
+    if (!number) return false;
+    const session = await loadSessionForChip(client, {
+      chip: phone,
+      phoneNumberId: number.id,
+      deviceId: null,
+    });
+    if (!session) return false;
+    return isSessionOnline(session).online === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Libera (marca como ended) pares que ficaram órfãos: um dos lados
  * não chama /pair há mais de PAIR_TTL_MS.
  */
@@ -366,15 +388,24 @@ export async function findOrCreatePairWithClient(
   if (!active.ok) return { ok: false, reason: active.reason };
   if (active.pair && active.other) {
     const pair = active.pair;
-    // Rotação a cada ciclo: se o par já foi confirmado por AMBOS os
-    // lados, encerra e procura um parceiro novo (distribui as trocas
-    // entre todas as contas online). Se ainda está em andamento
-    // (waiting/paired, ou confirmado por apenas um lado), mantém —
-    // não abandonamos um par no meio da troca.
-    if (rotate && pair.status === 'confirmed' && pair.confirmed_a === true && pair.confirmed_b === true) {
-      // Encerra o par confirmado e procura um novo (passo 3 abaixo).
-      // `active.other` continua disponível como "parceiro anterior"
-      // para o algoritmo de rotação evitar repetir o mesmo par.
+    const partnerOnline = await isChipOnlineWithClient(client, active.other);
+
+    // Se o parceiro NÃO está mais online, encerra o par e procura um
+    // novo — não adianta manter um par com quem não está trocando.
+    if (!partnerOnline) {
+      await client
+        .from('neon_warm_pairs')
+        .update({ status: 'ended', updated_at: nowIso() })
+        .eq('id', pair.id)
+        .in('status', ['waiting', 'paired', 'confirmed']);
+      // Cai para o passo 3 (procurar novo parceiro) com `active.other`
+      // ainda disponível como "parceiro anterior" para a rotação.
+    } else if (rotate && pair.status === 'confirmed' && pair.confirmed_a === true && pair.confirmed_b === true) {
+      // Rotação a cada ciclo: se o par já foi confirmado por AMBOS os
+      // lados, encerra e procura um parceiro novo (distribui as trocas
+      // entre todas as contas online). Se ainda está em andamento
+      // (waiting/paired, ou confirmado por apenas um lado), mantém —
+      // não abandonamos um par no meio da troca.
       await client
         .from('neon_warm_pairs')
         .update({ status: 'ended', updated_at: nowIso() })
@@ -426,7 +457,26 @@ export async function findOrCreatePairWithClient(
     excludeSessionId: sessionId,
     excludeDeviceId: deviceId,
   });
-  const candidates = elig.filter((e) => e.eligible);
+  let candidates = elig.filter((e) => e.eligible);
+
+  // Exclui candidatos que JÁ estão em outro par ativo (waiting/paired/
+  // confirmed) — evita que um número seja alvo de vários chips ao mesmo
+  // tempo (bug que deixava 3 chips pareados com o MESMO parceiro).
+  if (candidates.length > 1) {
+    const { data: takenPairs, error: takenErr } = await client
+      .from('neon_warm_pairs')
+      .select('chip_a, chip_b')
+      .in('status', ['waiting', 'paired', 'confirmed']);
+    if (!takenErr && takenPairs && takenPairs.length > 0) {
+      const busyPhones = new Set();
+      for (const p of takenPairs) {
+        if (p.chip_a !== normalized) busyPhones.add(p.chip_a);
+        if (p.chip_b !== normalized) busyPhones.add(p.chip_b);
+      }
+      candidates = candidates.filter((c) => !busyPhones.has(c.phone));
+    }
+  }
+
   if (candidates.length === 0) {
     // Continua para o passo 4 (sem par disponível).
   } else if (candidates.length === 1) {
@@ -572,6 +622,74 @@ export async function getActivePairWithClient(client, { chip }) {
   if (!active.pair) return { ok: true, pair: null, other: null };
 
   return { ok: true, pair: active.pair, other: active.other };
+}
+
+/**
+ * Encerra pares ativos (waiting/paired/confirmed).
+ *
+ * Dois usos (painel admin):
+ *   - Sem `onlyPhone` (release_stale): encerra os pares em que PELO MENOS
+ *     UM dos lados não está mais online (sem sessão ativa + heartbeat
+ *     recente). Destrava chips presos com parceiro que caiu offline.
+ *   - Com `onlyPhone` (release_number): encerra TODOS os pares ativos que
+ *     envolvem aquele número, independente de estarem online — "tirar o
+ *     número do pareamento" de forma explícita.
+ *
+ * @param {object} client  Client Supabase (injetado).
+ * @param {object} [params]
+ * @param {string|null} [params.onlyPhone]  Se informado, encerra TODOS os
+ *   pares que envolvem este número (força desvinculação).
+ * @returns {Promise<{ ok: boolean, released: number, reason?: string, error?: string }>}
+ */
+export async function releaseStalePairsWithClient(client, { onlyPhone = null } = {}) {
+  try {
+    let query = client
+      .from('neon_warm_pairs')
+      .select('*')
+      .in('status', ['waiting', 'paired', 'confirmed']);
+    if (onlyPhone) {
+      const p = normalizePhone(onlyPhone);
+      if (!p) return { ok: false, reason: 'invalid_phone', released: 0 };
+      query = query.or(`chip_a.eq.${p},chip_b.eq.${p}`);
+    }
+    const { data: pairs, error } = await query;
+    if (error) {
+      console.error('[pairing] erro ao listar pares para release:', error.message);
+      return { ok: false, reason: 'internal_error', error: error.message, released: 0 };
+    }
+
+    const toRelease = [];
+    for (const pair of pairs || []) {
+      if (onlyPhone) {
+        // Desvinculação explícita: encerra todos os pares do número.
+        toRelease.push(pair.id);
+      } else {
+        // Release automático: só encerra se um dos lados não está online.
+        const aOnline = await isChipOnlineWithClient(client, pair.chip_a);
+        const bOnline = await isChipOnlineWithClient(client, pair.chip_b);
+        if (!aOnline || !bOnline) toRelease.push(pair.id);
+      }
+    }
+
+    let released = 0;
+    if (toRelease.length > 0) {
+      const { error: updErr } = await client
+        .from('neon_warm_pairs')
+        .update({ status: 'ended', updated_at: nowIso() })
+        .in('id', toRelease)
+        .in('status', ['waiting', 'paired', 'confirmed']);
+      if (updErr) {
+        console.error('[pairing] erro ao encerrar pares stale:', updErr.message);
+        return { ok: false, reason: 'internal_error', error: updErr.message, released: 0 };
+      }
+      released = toRelease.length;
+    }
+
+    return { ok: true, released };
+  } catch (err) {
+    console.error('[pairing] exceção em releaseStalePairs:', err.message);
+    return { ok: false, reason: 'internal_error', error: err.message, released: 0 };
+  }
 }
 
 export { PAIR_TTL_MS };
