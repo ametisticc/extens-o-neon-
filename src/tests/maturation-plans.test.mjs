@@ -19,6 +19,8 @@ import {
   upsertPlanWithClient,
   pausePlanWithClient,
   approvePlanWithClient,
+  startPlanWithClient,
+  incrementCyclesWithClient,
   maybeAutoResumeWithClient,
   checkPlanAllowsPairingWithClient,
   bumpDailyStatsWithClient,
@@ -308,4 +310,82 @@ test('PLAN 15: board marca at_limit quando stats >= limite', async () => {
   const row = res.rows.find((r) => r.phone_number_normalized === '5511999999999');
   assert.equal(row.status, 'active');
   assert.equal(row.at_limit, true);
+});
+
+// ------------------------------------------------------------
+// TESTE 16 — startPlan cria plano ativo e zera contadores
+// ------------------------------------------------------------
+test('PLAN 16: startPlan cria plano ativo e zera contadores', async () => {
+  const res = await startPlanWithClient(mockClient, { phone: '5511999999999' });
+  assert.equal(res.ok, true);
+
+  const plan = await getPlanByPhoneWithClient(mockClient, '5511999999999');
+  assert.equal(plan.status, 'active');
+  assert.equal(plan.cycles_done, 0);
+  assert.equal(plan.paused_reason, null);
+  assert.equal(plan.paused_at, null);
+});
+
+// ------------------------------------------------------------
+// TESTE 17 — incrementCycles incrementa de 1 em 1
+// ------------------------------------------------------------
+test('PLAN 17: incrementCycles soma corretamente', async () => {
+  await startPlanWithClient(mockClient, { phone: '5511999999999' });
+  const c1 = await incrementCyclesWithClient(mockClient, '5511999999999');
+  assert.equal(c1, 1);
+  const c2 = await incrementCyclesWithClient(mockClient, '5511999999999');
+  assert.equal(c2, 2);
+});
+
+// ------------------------------------------------------------
+// TESTE 18 — Limite de ciclos atingido → bloqueia + auto-pausa
+// ------------------------------------------------------------
+test('PLAN 18: cycle_limit atingido → ok=false limite_ciclos_atingido', async () => {
+  await upsertPlanWithClient(mockClient, { phone: '5511999999999', cycleLimit: 2 });
+  await startPlanWithClient(mockClient, { phone: '5511999999999' }); // zera
+  await incrementCyclesWithClient(mockClient, '5511999999999');
+  await incrementCyclesWithClient(mockClient, '5511999999999'); // = 2
+
+  const res = await checkPlanAllowsPairingWithClient(mockClient, '5511999999999');
+  assert.equal(res.ok, false);
+  assert.equal(res.reason, 'limite_ciclos_atingido');
+
+  const plan = await getPlanByPhoneWithClient(mockClient, '5511999999999');
+  assert.equal(plan.status, 'paused');
+  assert.equal(plan.paused_reason, 'cycle_limit');
+});
+
+// ------------------------------------------------------------
+// TESTE 19 — Abaixo do limite de ciclos → libera
+// ------------------------------------------------------------
+test('PLAN 19: abaixo do cycle_limit → ok=true', async () => {
+  await upsertPlanWithClient(mockClient, { phone: '5511999999999', cycleLimit: 5 });
+  await startPlanWithClient(mockClient, { phone: '5511999999999' });
+  await incrementCyclesWithClient(mockClient, '5511999999999'); // = 1 (< 5)
+
+  const res = await checkPlanAllowsPairingWithClient(mockClient, '5511999999999');
+  assert.equal(res.ok, true);
+});
+
+// ------------------------------------------------------------
+// TESTE 20 — Sem cycle_limit → ilimitado
+// ------------------------------------------------------------
+test('PLAN 20: sem cycle_limit → nunca bloqueia por ciclo', async () => {
+  await startPlanWithClient(mockClient, { phone: '5511999999999' });
+  await incrementCyclesWithClient(mockClient, '5511999999999');
+  await incrementCyclesWithClient(mockClient, '5511999999999');
+  await incrementCyclesWithClient(mockClient, '5511999999999');
+
+  const res = await checkPlanAllowsPairingWithClient(mockClient, '5511999999999');
+  assert.equal(res.ok, true);
+});
+
+// ------------------------------------------------------------
+// TESTE 21 — upsert normaliza cycle_limit (>= 1)
+// ------------------------------------------------------------
+test('PLAN 21: upsert normaliza cycle_limit (>= 1)', async () => {
+  const res = await upsertPlanWithClient(mockClient, { phone: '5511999999999', cycleLimit: 0 });
+  assert.equal(res.ok, true);
+  const plan = await getPlanByPhoneWithClient(mockClient, '5511999999999');
+  assert.equal(plan.cycle_limit, 1);
 });

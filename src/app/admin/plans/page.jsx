@@ -35,6 +35,11 @@ function fmtCycle(seconds) {
   return `${seconds}s`;
 }
 
+function fmtCycles(done, limit) {
+  if (!limit) return done ? `${done} feito` : '—';
+  return `${done} / ${limit}`;
+}
+
 export default async function AdminPlansPage({ searchParams }) {
   const session = await readAdminSession();
   if (!session) return null; // layout renderiza o login
@@ -45,6 +50,7 @@ export default async function AdminPlansPage({ searchParams }) {
 
   const MSG_MAP = {
     saved: { text: phone ? `Plano de ${phone} salvo.` : 'Plano salvo.', type: 'success' },
+    started: { text: phone ? `Maturação de ${phone} iniciada — a extensão segue o plano no próximo ciclo.` : 'Maturação iniciada.', type: 'success' },
     paused: { text: phone ? `Maturação de ${phone} pausada.` : 'Maturação pausada.', type: 'success' },
     approved: { text: phone ? `${phone} aprovado — a extensão retoma no próximo ciclo.` : 'Plano aprovado.', type: 'success' },
     applied: { text: phone ? `Sugestão aplicada para ${phone}.` : 'Sugestão aplicada.', type: 'success' },
@@ -136,6 +142,7 @@ export default async function AdminPlansPage({ searchParams }) {
                 <th>Status</th>
                 <th>Hoje (enviadas)</th>
                 <th>Hoje (recebidas)</th>
+                <th>Ciclos</th>
                 <th>Última atividade</th>
                 <th>Sugestão</th>
                 <th>Ações</th>
@@ -159,6 +166,12 @@ export default async function AdminPlansPage({ searchParams }) {
                       ) : null}
                     </td>
                     <td className="mono">{r.received_today}</td>
+                    <td className="mono">
+                      {fmtCycles(r.cycles_done, r.cycle_limit)}
+                      {r.at_cycle_limit ? (
+                        <span className="badge warning" style={{ marginLeft: 6 }}>pausado</span>
+                      ) : null}
+                    </td>
                     <td>{fmtDateTime(r.last_activity_at)}</td>
                     <td style={{ fontSize: 12 }}>
                       {r.suggested_limit || r.suggested_cycle ? (
@@ -178,8 +191,8 @@ export default async function AdminPlansPage({ searchParams }) {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={8} className="empty">
-                    Nenhum número com plano ou estatística ainda. Os números conectados aparecem aqui
+                  <td colSpan={9} className="empty">
+                    Nenhum número conectado ou com plano ainda. Os números conectados aparecem aqui
                     conforme trocam mensagens (os clientes não precisam reinstalar nada).
                   </td>
                 </tr>

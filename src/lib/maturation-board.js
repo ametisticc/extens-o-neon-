@@ -53,6 +53,15 @@ export async function buildMaturationBoardWithClient(client) {
       return { ok: false, error: plansErr.message };
     }
 
+    // ---- 1b. Números conectados (mesmo critério do painel de pareamento):
+    // números com sessão ativa recente. Permite mostrar "Iniciar maturação"
+    // para números conectados sem plano ainda.
+    const { data: connectedNumbers } = await client
+      .from('neon_warm_numbers')
+      .select('phone_number_normalized')
+      .eq('status', 'active');
+    const connectedSet = new Set((connectedNumbers || []).map((n) => n.phone_number_normalized));
+
     // ---- 2. Stats de hoje ----
     const { data: statsRows, error: statsErr } = await client
       .from(STATS_TABLE)
@@ -104,7 +113,11 @@ export async function buildMaturationBoardWithClient(client) {
     const statsByPhone = new Map();
     for (const s of statsRows || []) statsByPhone.set(s.phone_number_normalized, s);
 
-    const phones = new Set([...(plans || []).map((p) => p.phone_number_normalized), ...statsByPhone.keys()]);
+    const phones = new Set([
+      ...(plans || []).map((p) => p.phone_number_normalized),
+      ...statsByPhone.keys(),
+      ...connectedSet,
+    ]);
 
     const rows = [];
     for (const phone of phones) {
@@ -118,11 +131,18 @@ export async function buildMaturationBoardWithClient(client) {
       const suggestedCycle = median(gaps) && median(gaps) >= 30 ? median(gaps) : null;
       const suggestedLimit = sentToday > 0 ? Math.max(sentToday, Math.ceil(sentToday * 1.25)) : null;
 
+      const cyclesDone = Number(plan?.cycles_done ?? 0);
+      const cycleLimit = plan?.cycle_limit ?? null;
+
       rows.push({
         phone_number_normalized: phone,
         plan,
+        connected: connectedSet.has(phone),
         daily_msg_limit: plan?.daily_msg_limit ?? null,
         cycle_seconds: plan?.cycle_seconds ?? null,
+        cycle_limit: cycleLimit,
+        cycles_done: cyclesDone,
+        at_cycle_limit: Boolean(cycleLimit) && cyclesDone >= cycleLimit,
         status: plan?.status ?? 'no_plan',
         auto_resume_daily: plan?.auto_resume_daily ?? true,
         paused_at: plan?.paused_at ?? null,

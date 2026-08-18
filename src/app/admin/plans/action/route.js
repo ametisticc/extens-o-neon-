@@ -4,7 +4,10 @@
 // Ações do painel de planos de maturação (somente operador):
 //
 //   action = save        → cria/atualiza o plano de um número
-//                          (daily_msg_limit, cycle_seconds, auto_resume_daily)
+//                          (daily_msg_limit, cycle_seconds, cycle_limit,
+//                           auto_resume_daily)
+//   action = start       → inicia a maturação do número (cria/ativa plano
+//                          e zera contadores)
 //   action = pause       → pausa o plano de um número (pareamento suspenso)
 //   action = approve     → aprova/continua (despausa) o plano
 //   action = apply_suggest → aplica a sugestão automática ao número
@@ -13,7 +16,7 @@
 // Mesmo padrão das outras rotas admin (cookie assinado + redirect).
 import { readAdminSession } from '@/lib/admin.js';
 import { tryGetSupabaseAdmin } from '@/lib/supabase.js';
-import { upsertPlanWithClient, pausePlanWithClient, approvePlanWithClient } from '@/lib/maturation-plans.js';
+import { upsertPlanWithClient, pausePlanWithClient, approvePlanWithClient, startPlanWithClient } from '@/lib/maturation-plans.js';
 import { buildMaturationBoardWithClient } from '@/lib/maturation-board.js';
 import { logEvent } from '@/lib/logger.js';
 import { redirect } from 'next/navigation';
@@ -21,7 +24,7 @@ import { redirect } from 'next/navigation';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const VALID_ACTIONS = ['save', 'pause', 'approve', 'apply_suggest'];
+const VALID_ACTIONS = ['save', 'start', 'pause', 'approve', 'apply_suggest'];
 
 export async function POST(request) {
   const session = await readAdminSession();
@@ -52,15 +55,18 @@ export async function POST(request) {
   if (action === 'save') {
     const dailyRaw = String(formData.get('daily_msg_limit') ?? '').trim();
     const cycleRaw = String(formData.get('cycle_seconds') ?? '').trim();
+    const cycleLimitRaw = String(formData.get('cycle_limit') ?? '').trim();
     const autoRaw = String(formData.get('auto_resume_daily') ?? 'true');
 
     const dailyMsgLimit = dailyRaw === '' ? null : Math.max(1, Math.round(Number(dailyRaw)) || 0);
     const cycleSeconds = cycleRaw === '' ? null : Math.max(30, Math.round(Number(cycleRaw)) || 0);
+    const cycleLimit = cycleLimitRaw === '' ? null : Math.max(1, Math.round(Number(cycleLimitRaw)) || 0);
 
     const result = await upsertPlanWithClient(supabase, {
       phone,
       dailyMsgLimit,
       cycleSeconds,
+      cycleLimit,
       autoResumeDaily: autoRaw !== 'false',
     });
 
@@ -71,9 +77,21 @@ export async function POST(request) {
 
     await logEvent({
       eventType: 'plan_saved',
-      metadata: { admin: session, phone, daily_msg_limit: dailyMsgLimit, cycle_seconds: cycleSeconds },
+      metadata: { admin: session, phone, daily_msg_limit: dailyMsgLimit, cycle_seconds: cycleSeconds, cycle_limit: cycleLimit },
     });
     redirect(`/admin/plans?msg=saved&phone=${encodeURIComponent(phone)}`);
+  }
+
+  // ------------------------------------------------------------
+  // INICIAR MATURAÇÃO (cria/ativa plano + zera contadores)
+  // ------------------------------------------------------------
+  if (action === 'start') {
+    const result = await startPlanWithClient(supabase, { phone });
+    if (!result.ok) {
+      redirect('/admin/plans?msg=error');
+    }
+    await logEvent({ eventType: 'plan_started', metadata: { admin: session, phone } });
+    redirect(`/admin/plans?msg=started&phone=${encodeURIComponent(phone)}`);
   }
 
   // ------------------------------------------------------------

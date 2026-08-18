@@ -18,7 +18,7 @@
 import { guardExtensionRoute } from '@/lib/api-guard.js';
 import { confirmPair, getActivePair } from '@/lib/pairing.js';
 import { normalizePhone } from '@/lib/phone.js';
-import { bumpDailyStatsWithClient, markPairStatsCountedWithClient } from '@/lib/maturation-plans.js';
+import { bumpDailyStatsWithClient, markPairStatsCountedWithClient, incrementCyclesWithClient } from '@/lib/maturation-plans.js';
 import { getSupabaseAdmin } from '@/lib/supabase.js';
 import { readJsonBody, jsonOk, jsonError } from '@/lib/http.js';
 import { logEvent } from '@/lib/logger.js';
@@ -91,6 +91,11 @@ export async function POST(request) {
       await bumpDailyStatsWithClient(getSupabaseAdmin(), normalized, { sent: 1, received: 1 }).catch(() => {});
       if (other) {
         await bumpDailyStatsWithClient(getSupabaseAdmin(), other, { sent: 1, received: 1 }).catch(() => {});
+      }
+      // Contador de ciclos (pares confirmados) — usado pelo limite de ciclos.
+      await incrementCyclesWithClient(getSupabaseAdmin(), normalized).catch(() => {});
+      if (other) {
+        await incrementCyclesWithClient(getSupabaseAdmin(), other).catch(() => {});
       }
     }
   }

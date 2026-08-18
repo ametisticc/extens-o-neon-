@@ -10,9 +10,25 @@ export default function PlanActions({ row }) {
   const phone = row.phone_number_normalized || '';
   const hasPlan = row.status !== 'no_plan';
   const paused = row.status === 'paused';
+  const showStart = !hasPlan || paused;
 
   return (
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+      {showStart && (
+        <form
+          action="/admin/plans/action"
+          method="post"
+          onSubmit={(e) => {
+            if (!confirm(`Iniciar a maturação do número ${phone}? A extensão segue o plano no próximo ciclo.`)) {
+              e.preventDefault();
+            }
+          }}
+        >
+          <input type="hidden" name="action" value="start" />
+          <input type="hidden" name="phone" value={phone} />
+          <button type="submit" className="btn btn-success btn-sm">▶ Iniciar</button>
+        </form>
+      )}
       {paused && (
         <form
           action="/admin/plans/action"
@@ -97,6 +113,21 @@ export default function PlanActions({ row }) {
                 placeholder="padrão da extensão"
                 style={{ width: '100%', marginTop: 2 }}
               />
+            </label>
+            <label style={{ fontSize: 12, fontWeight: 600 }}>
+              Limite de ciclos (pares)
+              <input
+                type="number"
+                name="cycle_limit"
+                min={1}
+                step={1}
+                defaultValue={row.cycle_limit ?? ''}
+                placeholder="ilimitado"
+                style={{ width: '100%', marginTop: 2 }}
+              />
+              <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>
+                Deixa vazio para ilimitado. Ao atingir, pausa até você continuar.
+              </span>
             </label>
             <label style={{ fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
               <input type="checkbox" name="auto_resume_daily" value="true" defaultChecked={row.auto_resume_daily !== false} />

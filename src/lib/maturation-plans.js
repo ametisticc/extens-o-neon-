@@ -64,7 +64,7 @@ export async function getPlanByPhoneWithClient(client, phone) {
  */
 export async function upsertPlanWithClient(
   client,
-  { phone, dailyMsgLimit = null, cycleSeconds = null, autoResumeDaily = true, status = 'active' }
+  { phone, dailyMsgLimit = null, cycleSeconds = null, cycleLimit = null, autoResumeDaily = true, status = 'active' }
 ) {
   const normalized = normalizePhone(phone);
   if (!normalized) return { ok: false, reason: 'invalid_phone' };
@@ -73,6 +73,7 @@ export async function upsertPlanWithClient(
     phone_number_normalized: normalized,
     daily_msg_limit: dailyMsgLimit === null || dailyMsgLimit === '' ? null : Math.max(1, Math.round(Number(dailyMsgLimit) || 0) || null),
     cycle_seconds: cycleSeconds === null || cycleSeconds === '' ? null : Math.max(30, Math.round(Number(cycleSeconds) || 0) || null),
+    cycle_limit: cycleLimit === null || cycleLimit === '' ? null : Math.max(1, Math.round(Number(cycleLimit) || 0) || null),
     auto_resume_daily: autoResumeDaily !== false,
     status: status === 'paused' ? 'paused' : 'active',
   };
@@ -144,6 +145,72 @@ export async function approvePlanWithClient(client, { phone }) {
   }
   if (!data) return { ok: false, reason: 'no_plan' };
   return { ok: true, plan: data };
+}
+
+/**
+ * Inicia a maturação de um número: cria o plano (se não existir) e
+ * garante status = active, zerando contadores de pausa. Usado pelo
+ * botão "Iniciar maturação" do painel.
+ */
+export async function startPlanWithClient(client, { phone, dailyMsgLimit = null, cycleSeconds = null, cycleLimit = null, autoResumeDaily = true }) {
+  const normalized = normalizePhone(phone);
+  if (!normalized) return { ok: false, reason: 'invalid_phone' };
+
+  const existing = await getPlanByPhoneWithClient(client, normalized);
+  const base = {
+    phone: normalized,
+    dailyMsgLimit: dailyMsgLimit ?? existing?.daily_msg_limit ?? null,
+    cycleSeconds: cycleSeconds ?? existing?.cycle_seconds ?? null,
+    cycleLimit: cycleLimit ?? existing?.cycle_limit ?? null,
+    autoResumeDaily: autoResumeDaily !== false,
+    status: 'active',
+  };
+  const result = await upsertPlanWithClient(client, base);
+  if (!result.ok) return result;
+  // Zera contadores e limpa qualquer marca de pausa.
+  const { data, error } = await client
+    .from(PLAN_TABLE)
+    .update({
+      status: 'active',
+      paused_at: null,
+      paused_reason: null,
+      approved_at: new Date().toISOString(),
+      cycles_done: 0,
+    })
+    .eq('phone_number_normalized', normalized)
+    .select('*')
+    .maybeSingle();
+  if (error) {
+    console.error('[maturation] erro ao iniciar maturação:', error.message);
+    return { ok: false, reason: 'internal_error', error: error.message };
+  }
+  return { ok: true, plan: data };
+}
+
+/**
+ * Incrementa o contador de ciclos (pares confirmados) de um número.
+ * Lê o valor atual e seta +1 (o supabase-js não tem increment nativo no
+ * update; o markPairStatsCounted já garante que só UM lado incrementa
+ * por par, e um número tem no máximo 1 par ativo, então é seguro).
+ * Retorna o novo cycles_done ou null se falhar.
+ */
+export async function incrementCyclesWithClient(client, phone) {
+  const normalized = normalizePhone(phone);
+  if (!normalized) return null;
+  const plan = await getPlanByPhoneWithClient(client, normalized);
+  if (!plan) return null;
+  const next = Number(plan.cycles_done ?? 0) + 1;
+  const { data, error } = await client
+    .from(PLAN_TABLE)
+    .update({ cycles_done: next })
+    .eq('phone_number_normalized', normalized)
+    .select('cycles_done')
+    .maybeSingle();
+  if (error) {
+    console.error('[maturation] erro ao incrementar ciclos:', error.message);
+    return null;
+  }
+  return data ? Number(data.cycles_done ?? 0) : null;
 }
 
 /**
@@ -259,6 +326,19 @@ export async function checkPlanAllowsPairingWithClient(client, phone) {
       .then(() => {})
       .catch(() => {});
     return { ok: false, reason: 'limite_diario_atingido', plan, stats };
+  }
+
+  // 4. Limite de ciclos (pares confirmados).
+  if (plan.cycle_limit && Number(plan.cycles_done ?? 0) >= Number(plan.cycle_limit)) {
+    // Auto-pausa por limite de ciclos (não desbloqueia sozinho no dia
+    // seguinte; só com o botão Continuar do painel).
+    await client
+      .from(PLAN_TABLE)
+      .update({ status: 'paused', paused_at: new Date().toISOString(), paused_reason: 'cycle_limit' })
+      .eq('phone_number_normalized', normalized)
+      .then(() => {})
+      .catch(() => {});
+    return { ok: false, reason: 'limite_ciclos_atingido', plan, stats };
   }
 
   return { ok: true, plan, stats };
