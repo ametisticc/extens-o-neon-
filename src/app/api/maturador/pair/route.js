@@ -29,6 +29,7 @@ import { guardExtensionRoute } from '@/lib/api-guard.js';
 import { findOrCreatePair } from '@/lib/pairing.js';
 import { getSupabaseAdmin, DB } from '@/lib/supabase.js';
 import { normalizePhone } from '@/lib/phone.js';
+import { checkPlanAllowsPairingWithClient } from '@/lib/maturation-plans.js';
 import { readJsonBody, jsonOk, jsonError } from '@/lib/http.js';
 import { logEvent } from '@/lib/logger.js';
 
@@ -138,6 +139,40 @@ export async function POST(request) {
     });
   }
 
+  // ------------------------------------------------------------------
+  // ENFORCEMENT DO PLANO DE MATURAÇÃO (100% backend, sem tocar na
+  // extensão). A extensão trata HTTP 503 como "servidor ocupado":
+  // espera ~15s e tenta de novo. Então "pausado" / "limite diário" /
+  // "intervalo entre ciclos" são aplicados NEGANDO o par com 503. A
+  // extensão retoma sozinha quando o operador aprova (ou vira o dia).
+  // ------------------------------------------------------------------
+  const planCheck = await checkPlanAllowsPairingWithClient(getSupabaseAdmin(), normalized);
+  if (!planCheck.ok) {
+    await logEvent({
+      eventType: 'pair_blocked_by_plan',
+      phoneNumberId: reg.numberId,
+      metadata: { phone_number: normalized, reason: planCheck.reason },
+    }).catch(() => {});
+    logDebug([
+      'PAIR REQUEST',
+      `phone_number: ${normalized}`,
+      'PLAN: bloqueado',
+      `REASON: ${planCheck.reason || 'unknown'}`,
+    ]);
+    // 503 com corpo JSON simples. A extensão (v1.0.4/1.0.5) lê o corpo
+    // como { code: 0, pairWith: null } e trata o status 503 como
+    // "servidor ocupado" → tenta de novo em ~15s (não cai na lista local).
+    return Response.json(
+      {
+        code: 0,
+        pairWith: null,
+        message: planCheck.reason || 'pareamento_aguardando',
+        retry_after: planCheck.retry_after ?? 15,
+      },
+      { status: 503 }
+    );
+  }
+
   const result = await findOrCreatePair({
     chip: normalized,
     preferredWith: rawPreferred,
@@ -175,7 +210,7 @@ export async function POST(request) {
         ? candidates.map((c) =>
             `- phone: ${c.phone} | status: ${c.status} | last_heartbeat: ${c.last_heartbeat} | online: ${c.online} | eligible: ${c.eligible} | reason: ${c.reason ?? '-'}`
           )
-        : ['- nenhuma'],
+        : ['- nenhuma']
       ),
       'SELECTED: nenhum',
       'RESULT: sem_par_disponivel',

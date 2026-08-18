@@ -60,8 +60,43 @@ function applyOrder(rows, order) {
   });
 }
 
+function applyRpc(getDb, name, args) {
+  if (name === 'neon_warm_bump_daily_stats') {
+    const { p_phone, p_date, p_sent_delta = 0, p_received_delta = 0 } = args || {};
+    const table = 'neon_warm_daily_stats';
+    const rows = getDb()[table] || [];
+    const row = rows.find(
+      (r) => r.phone_number_normalized === p_phone && r.stats_date === p_date
+    );
+    if (row) {
+      row.sent_count = (row.sent_count || 0) + Math.max(Number(p_sent_delta) || 0, 0);
+      row.received_count = (row.received_count || 0) + Math.max(Number(p_received_delta) || 0, 0);
+      row.last_activity_at = new Date().toISOString();
+      return [{ sent: row.sent_count, received: row.received_count }];
+    }
+    const newRow = {
+      id: randomUUID(),
+      phone_number_normalized: p_phone,
+      stats_date: p_date,
+      sent_count: Math.max(Number(p_sent_delta) || 0, 0),
+      received_count: Math.max(Number(p_received_delta) || 0, 0),
+      first_activity_at: new Date().toISOString(),
+      last_activity_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    getDb()[table] = [...rows, newRow];
+    return [{ sent: newRow.sent_count, received: newRow.received_count }];
+  }
+  return [];
+}
+
 export function createMockSupabase(getDb) {
   return {
+    rpc(name, args) {
+      const data = applyRpc(getDb, name, args);
+      return Promise.resolve({ data, error: null });
+    },
     from(table) {
       const state = {
         filters: [],
@@ -118,6 +153,26 @@ export function createMockSupabase(getDb) {
           const full = { ...record, id };
           getDb()[table] = [...(getDb()[table] || []), full];
           state.insertedId = id;
+          return api;
+        },
+        upsert(record, opts) {
+          const id = record.id || randomUUID();
+          const existing = (getDb()[table] || []).find((r) => {
+            if (opts?.onConflict) {
+              const col = opts.onConflict;
+              return String(r[col]) === String(record[col]);
+            }
+            return r.id === id;
+          });
+          if (existing) {
+            const merged = { ...existing, ...record, id: existing.id };
+            getDb()[table] = (getDb()[table] || []).map((r) => (r.id === existing.id ? merged : r));
+            state.insertedId = existing.id;
+          } else {
+            const full = { ...record, id };
+            getDb()[table] = [...(getDb()[table] || []), full];
+            state.insertedId = id;
+          }
           return api;
         },
 

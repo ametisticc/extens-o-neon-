@@ -18,6 +18,8 @@
 import { guardExtensionRoute } from '@/lib/api-guard.js';
 import { confirmPair, getActivePair } from '@/lib/pairing.js';
 import { normalizePhone } from '@/lib/phone.js';
+import { bumpDailyStatsWithClient, markPairStatsCountedWithClient } from '@/lib/maturation-plans.js';
+import { getSupabaseAdmin } from '@/lib/supabase.js';
 import { readJsonBody, jsonOk, jsonError } from '@/lib/http.js';
 import { logEvent } from '@/lib/logger.js';
 
@@ -73,6 +75,25 @@ export async function POST(request) {
   const confirmed =
     result.confirmed === true ||
     (result.pair.status === 'confirmed' && result.pair.confirmed_a && result.pair.confirmed_b);
+
+  // ------------------------------------------------------------------
+  // CONTAGEM DIÁRIA (stats): quando o par está CONFIRMADO (ambos os
+  // lados), conta +1 enviada e +1 recebida para CADA número do par.
+  // O `markPairStatsCounted` é atômico (where stats_counted = false),
+  // então só a PRIMEIRA confirmação do par incrementa — a segunda
+  // (do outro lado) não duplica a contagem.
+  // ------------------------------------------------------------------
+  if (confirmed && result.pair && result.pair.id) {
+    const counted = await markPairStatsCountedWithClient(getSupabaseAdmin(), result.pair.id);
+    if (counted) {
+      // Este lado enviou 1 (foi o confirm) e recebeu 1 (o outro também).
+      // Ambos os lados do par ganham +1 sent e +1 received por ciclo.
+      await bumpDailyStatsWithClient(getSupabaseAdmin(), normalized, { sent: 1, received: 1 }).catch(() => {});
+      if (other) {
+        await bumpDailyStatsWithClient(getSupabaseAdmin(), other, { sent: 1, received: 1 }).catch(() => {});
+      }
+    }
+  }
 
   await logEvent({
     eventType: 'pair_validate',

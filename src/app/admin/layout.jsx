@@ -10,6 +10,7 @@ async function AdminLayout({ children }) {
   const nav = [
     { href: '/admin', label: 'Dashboard', exact: true },
     { href: '/admin/pairing', label: 'Pareamento', exact: false },
+    { href: '/admin/plans', label: 'Planos', exact: false },
     { href: '/admin/numbers', label: 'Números', exact: false },
     { href: '/admin/licenses', label: 'Licenças', exact: false },
     { href: '/admin/messages', label: 'Mensagens', exact: false },
