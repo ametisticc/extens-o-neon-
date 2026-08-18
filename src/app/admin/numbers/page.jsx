@@ -1,20 +1,28 @@
+// ============================================================
+// Painel de Números — /admin/numbers
+// ============================================================
+// Mostra os números cadastrados com:
+//   - Cliente / Número / Plano / Status (online) / Maturação /
+//     Vencimento / Última atividade / Dispositivos
+//   - Ações: 🌡️ Iniciar maturação (só para números elegíveis) +
+//     seleção em massa.
+//
+// Server Component: busca números + enriquece com sessões (online) e
+// planos (maturação) via buildNumberMaturationRowsWithClient. A tabela
+// interativa é renderizada pelo Client Component StartMaturation, que
+// dispara POST /admin/numbers/action (a rota revalida no servidor e
+// chama a função EXISTENTE startPlanWithClient).
+//
+// Nenhuma lógica de maturação, extensão ou pareamento foi alterada.
 import { readAdminSession } from '@/lib/admin.js';
 import { tryGetSupabaseAdmin, DB } from '@/lib/supabase.js';
+import { buildNumberMaturationRowsWithClient } from '@/lib/maturation-eligibility.js';
 import { fmtDateTime } from '@/lib/fmt.js';
 import { AdminSetupWarning } from '@/components/AdminSetupWarning.jsx';
+import StartMaturation from './StartMaturation.jsx';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-function statusBadge(status) {
-  const map = {
-    active: 'success',
-    blocked: 'blocked',
-    inactive: 'inactive',
-    expired: 'expired',
-  };
-  return <span className={`badge ${map[status] || 'inactive'}`}>{status}</span>;
-}
 
 export default async function AdminNumbersPage() {
   const session = await readAdminSession();
@@ -23,6 +31,7 @@ export default async function AdminNumbersPage() {
   const supabase = tryGetSupabaseAdmin();
   let numbers = null;
   let fetchError = null;
+  let enriched = null;
   if (supabase) {
     try {
       const { data, error } = await supabase
@@ -41,10 +50,34 @@ export default async function AdminNumbersPage() {
     }
   }
 
+  // Enriquece com sessão online + plano de maturação + elegibilidade.
+  if (numbers && !fetchError) {
+    const res = await buildNumberMaturationRowsWithClient(supabase, numbers);
+    if (res.ok) {
+      enriched = res.rows;
+    } else {
+      fetchError = `Falha ao avaliar maturação: ${res.error ?? 'erro desconhecido'}`;
+    }
+  }
+
+  // Formata "última atividade" para exibição (usa last_heartbeat_at ou last_seen_at).
+  const rows = (enriched || []).map((r) => ({
+    ...r,
+    last_activity: r.last_heartbeat_at
+      ? fmtDateTime(r.last_heartbeat_at)
+      : r.last_seen_at
+        ? fmtDateTime(r.last_seen_at)
+        : '—',
+  }));
+
   return (
     <>
       <h1 className="page-title">Números</h1>
-      <p className="page-subtitle">Números de WhatsApp cadastrados no Neon Warm</p>
+      <p className="page-subtitle">
+        Números de WhatsApp cadastrados no Neon Warm. O botão <strong>🌡️ Iniciar</strong> fica
+        disponível apenas para números <strong>online e ativos</strong> — ele dispara o mesmo fluxo
+        de maturação já existente (nada muda na extensão).
+      </p>
 
       <AdminSetupWarning />
 
@@ -55,40 +88,29 @@ export default async function AdminNumbersPage() {
       )}
 
       <div className="card">
-        <div className="table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Cliente</th>
-                <th>Número</th>
-                <th>Plano</th>
-                <th>Status</th>
-                <th>Vencimento</th>
-                <th>Última atividade</th>
-                <th>Dispositivos</th>
-              </tr>
-            </thead>
-            <tbody>
-              {numbers && numbers.length > 0 ? (
-                numbers.map((n) => (
-                  <tr key={n.id}>
-                    <td>{n.neon_warm_users?.name || n.neon_warm_users?.email || '—'}</td>
-                    <td className="mono">{n.phone_number}</td>
-                    <td>—</td>
-                    <td>{statusBadge(n.status)}</td>
-                    <td>—</td>
-                    <td>{fmtDateTime(n.last_seen_at)}</td>
-                    <td>{n.neon_warm_devices?.length ?? 0}</td>
-                  </tr>
-                ))
-              ) : (
+        {rows.length > 0 ? (
+          <StartMaturation rows={rows} />
+        ) : (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
                 <tr>
-                  <td colSpan={7} className="empty">Nenhum número cadastrado.</td>
+                  <th>Cliente</th>
+                  <th>Número</th>
+                  <th>Status</th>
+                  <th>Maturação</th>
+                  <th>Última atividade</th>
+                  <th>Dispositivos</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                <tr>
+                  <td colSpan={6} className="empty">Nenhum número cadastrado.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </>
   );
