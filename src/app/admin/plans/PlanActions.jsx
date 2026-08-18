@@ -84,12 +84,12 @@ export default function PlanActions({ row }) {
             style={{
               position: 'absolute',
               zIndex: 10,
-              background: 'var(--bg, #fff)',
-              border: '1px solid #ddd',
-              borderRadius: 8,
-              padding: 10,
+              background: 'var(--surface-2, #101024)',
+              border: '1px solid var(--border, rgba(255,255,255,.14))',
+              borderRadius: 10,
+              padding: 12,
               minWidth: 240,
-              boxShadow: '0 6px 24px rgba(0,0,0,.12)',
+              boxShadow: '0 18px 40px -12px rgba(0,0,0,.7)',
             }}
           >
             <input type="hidden" name="action" value="flag" />
@@ -140,12 +140,12 @@ export default function PlanActions({ row }) {
           style={{
             position: 'absolute',
             zIndex: 10,
-            background: 'var(--bg, #fff)',
-            border: '1px solid #ddd',
-            borderRadius: 8,
-            padding: 10,
+            background: 'var(--surface-2, #101024)',
+            border: '1px solid var(--border, rgba(255,255,255,.14))',
+            borderRadius: 10,
+            padding: 12,
             minWidth: 260,
-            boxShadow: '0 6px 24px rgba(0,0,0,.12)',
+            boxShadow: '0 18px 40px -12px rgba(0,0,0,.7)',
           }}
         >
           <input type="hidden" name="action" value="save" />

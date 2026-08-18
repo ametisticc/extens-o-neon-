@@ -166,7 +166,7 @@ export default async function AdminPlansPage({ searchParams }) {
             <tbody>
               {rows.length > 0 ? (
                 rows.map((r, i) => (
-                  <tr key={r.phone_number_normalized || i} style={r.status === 'paused' ? { background: 'rgba(244,63,94,.05)' } : undefined}>
+                  <tr key={r.phone_number_normalized || i} style={r.status === 'paused' ? { background: 'rgba(244,63,94,.07)' } : undefined}>
                     <td className="mono">{r.phone_number_normalized}</td>
                     <td style={{ fontSize: 12 }}>
                       <span className="muted">limite</span> {r.daily_msg_limit ?? '∞'}
