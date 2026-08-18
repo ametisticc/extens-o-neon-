@@ -153,8 +153,16 @@ export async function POST(request) {
   // espera ~15s e tenta de novo. Então "pausado" / "limite diário" /
   // "intervalo entre ciclos" são aplicados NEGANDO o par com 503. A
   // extensão retoma sozinha quando o operador aprova (ou vira o dia).
+  //
+  // ⚠️ HOTFIX 2026-08-18: enforcement DESLIGADO por padrão. O flag
+  // NEON_WARM_ENFORCE_PLANS='1' reativa. Motivo: planos configurados
+  // (intervalo/limite/banido) deixavam a extensão presa em "servidor
+  // ocupado" e o operador pediu para voltar a parear como antes.
   // ------------------------------------------------------------------
-  const planCheck = await checkPlanAllowsPairingWithClient(getSupabaseAdmin(), normalized);
+  const enforcePlans =
+    String(process.env.NEON_WARM_ENFORCE_PLANS ?? '') === '1' ||
+    ['1', 'true', 'on', 'yes'].includes(String(process.env.NEON_WARM_ENFORCE_PLANS ?? '').toLowerCase());
+  const planCheck = enforcePlans ? await checkPlanAllowsPairingWithClient(getSupabaseAdmin(), normalized) : { ok: true };
   if (!planCheck.ok) {
     await logEvent({
       eventType: 'pair_blocked_by_plan',
