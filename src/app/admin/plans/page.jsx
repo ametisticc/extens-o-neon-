@@ -18,6 +18,7 @@ import { tryGetSupabaseAdmin } from '@/lib/supabase.js';
 import { buildMaturationBoardWithClient } from '@/lib/maturation-board.js';
 import { fmtDate } from '@/lib/fmt.js';
 import { AdminSetupWarning } from '@/components/AdminSetupWarning.jsx';
+import MaturationStatus from '@/components/MaturationStatus.jsx';
 import PlanActions from './PlanActions.jsx';
 import CopyNumber from './CopyNumber.jsx';
 import NewPlanButton from './NewPlanButton.jsx';
@@ -52,44 +53,21 @@ function fmtTime(value) {
   }
 }
 
-/* ---------------------------- status dot --------------------------- */
-function StatusDot({ row }) {
+/* ------------------------ detalhe do status ------------------------ */
+// Constrói o tooltip com dados reais da linha (motivo/data), passado
+// como `detail` para o MaturationStatus. A derivação do estado usa
+// SÓ campos reais (penalty_status/status) — nada inventado.
+function statusDetail(row) {
   if (row.penalty_status) {
-    const isBan = row.penalty_status === 'banned';
     const extra = row.flag_reason ? ` · ${row.flag_reason}` : '';
-    return (
-      <span
-        className={`dot-badge red${isBan ? '' : ' amber'}`}
-        title={`Marcado em ${fmtDate(row.flagged_at)}${extra}`}
-      >
-        <i />
-        {isBan ? 'banido' : 'restrito'}
-      </span>
-    );
+    return `Marcado em ${fmtDate(row.flagged_at)}${extra}`;
   }
   if (row.status === 'paused') {
     const reason = row.paused_reason === 'daily_limit' ? 'limite diário' : row.paused_reason === 'cycle_limit' ? 'limite de ciclos' : row.paused_reason || 'manual';
-    return (
-      <span className="dot-badge amber" title={`Pausado · ${reason}`}>
-        <i />
-        pausado
-      </span>
-    );
+    return `Pausado · ${reason}`;
   }
-  if (row.status === 'active') {
-    return (
-      <span className="dot-badge green">
-        <i />
-        ativo
-      </span>
-    );
-  }
-  return (
-    <span className="dot-badge gray">
-      <i />
-      sem plano
-    </span>
-  );
+  if (row.status === 'no_plan') return 'Sem plano configurado · funcionando normalmente';
+  return null;
 }
 
 /* ----------------------------- ícones ----------------------------- */
@@ -307,7 +285,7 @@ export default async function AdminPlansPage({ searchParams }) {
                       </div>
                     </td>
                     <td data-label="Status">
-                      <StatusDot row={r} />
+                      <MaturationStatus row={r} detail={statusDetail(r)} />
                     </td>
                     <td className="num" data-label="Enviadas hoje">
                       {r.sent_today}
