@@ -64,4 +64,5 @@ export const DB = {
   PAIRS: 'neon_warm_pairs',
   MESSAGES: 'neon_warm_messages',
   MATURATION_SCHEDULES: 'neon_warm_maturation_schedules',
+  AUTO_PAUSE_EVENTS: 'neon_warm_auto_pause_events',
 };

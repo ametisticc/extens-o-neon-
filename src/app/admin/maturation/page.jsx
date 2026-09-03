@@ -59,6 +59,7 @@ export default function MaturationPage() {
   const [status, setStatus] = useState(null);
   const [logs, setLogs] = useState([]);
   const [schedules, setSchedules] = useState([]);
+  const [pauseStatus, setPauseStatus] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedNumbers, setSelectedNumbers] = useState([]);
   const [action, setAction] = useState('start');
@@ -122,6 +123,25 @@ export default function MaturationPage() {
     };
 
     fetchSchedules();
+  }, []);
+
+  // Buscar status de pausas automáticas
+  useEffect(() => {
+    const fetchPauseStatus = async () => {
+      try {
+        const res = await fetch('/api/admin/maturation/auto-pause-status');
+        const data = await res.json();
+        if (data.ok) {
+          setPauseStatus(data.events);
+        }
+      } catch (error) {
+        console.error('Erro ao buscar pausas:', error);
+      }
+    };
+
+    fetchPauseStatus();
+    const interval = setInterval(fetchPauseStatus, 30000); // Atualizar a cada 30s
+    return () => clearInterval(interval);
   }, []);
 
   const handleSchedule = async () => {
@@ -231,6 +251,48 @@ export default function MaturationPage() {
           <div className="stat-complement">autorizadas</div>
         </div>
       </div>
+
+      {/* Alertas de Pausas Automáticas */}
+      {pauseStatus.length > 0 && (
+        <div className="card" style={{ marginBottom: '20px', borderLeft: '4px solid #ef4444' }}>
+          <div className="card-head">
+            <h2>🤖 Pausas Automáticas Ativas</h2>
+          </div>
+          <div style={{ padding: '0' }}>
+            {pauseStatus.map((pause, idx) => {
+              const resumeIn = Math.max(0, pause.resume_in_minutes);
+              return (
+                <div
+                  key={pause.id}
+                  style={{
+                    padding: '15px 20px',
+                    borderBottom: idx < pauseStatus.length - 1 ? '1px solid #eee' : 'none',
+                    background: idx % 2 === 0 ? '#fef2f2' : 'transparent',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#991b1b', marginBottom: '4px' }}>
+                        Número pausado
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#666' }}>
+                        Motivo: {pause.reason === 'low_success_rate' ? 'Taxa de sucesso baixa' : pause.reason}
+                        {pause.last_success_rate && ` (${pause.last_success_rate}%)`}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#991b1b' }}>
+                        {resumeIn}m
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#999' }}>até retomada</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Controle de Maturação */}
       <div className="card">
