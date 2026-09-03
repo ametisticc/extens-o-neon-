@@ -116,11 +116,8 @@ export async function GET(request) {
         Connection: 'Upgrade',
       },
     });
-  } catch (error) {
-    console.error('[ws] erro ao criar WebSocket:', error);
-    return new Response(JSON.stringify({ error: 'Falha ao conectar' }), { status: 500 });
-  }
+   } catch (error) {
+     console.error('[ws] erro ao criar WebSocket:', error);
+     return new Response(JSON.stringify({ error: 'Falha ao conectar' }), { status: 500 });
+   }
 }
-
-// Exportar função para outras rotas usarem
-export { broadcastEvent };
