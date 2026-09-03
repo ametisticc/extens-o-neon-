@@ -58,10 +58,17 @@ const ICONS = {
 export default function MaturationPage() {
   const [status, setStatus] = useState(null);
   const [logs, setLogs] = useState([]);
+  const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedNumbers, setSelectedNumbers] = useState([]);
   const [action, setAction] = useState('start');
   const [mode, setMode] = useState('normal');
+  const [showScheduleForm, setShowScheduleForm] = useState(false);
+  const [scheduleData, setScheduleData] = useState({
+    start: '',
+    end: '',
+    duration: '30',
+  });
 
   // Buscar status em tempo real
   useEffect(() => {
@@ -99,6 +106,59 @@ export default function MaturationPage() {
 
     fetchLogs();
   }, []);
+
+  // Buscar agendamentos
+  useEffect(() => {
+    const fetchSchedules = async () => {
+      try {
+        const res = await fetch('/api/admin/maturation/schedule?status=pending');
+        const data = await res.json();
+        if (data.ok) {
+          setSchedules(data.schedules);
+        }
+      } catch (error) {
+        console.error('Erro ao buscar agendamentos:', error);
+      }
+    };
+
+    fetchSchedules();
+  }, []);
+
+  const handleSchedule = async () => {
+    if (selectedNumbers.length === 0) {
+      alert('Selecione pelo menos um número');
+      return;
+    }
+
+    if (!scheduleData.start) {
+      alert('Defina data e hora de início');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/admin/maturation/schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone_numbers: selectedNumbers,
+          scheduled_start_at: new Date(scheduleData.start).toISOString(),
+          scheduled_end_at: scheduleData.end ? new Date(scheduleData.end).toISOString() : null,
+          mode,
+          duration_minutes: mode === 'time' ? parseInt(scheduleData.duration) : null,
+          duration_cycles: mode === 'cycles' ? parseInt(scheduleData.duration) : null,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        alert(`${data.summary.scheduled} agendamento(s) criado(s)`);
+        setShowScheduleForm(false);
+        setSelectedNumbers([]);
+        setScheduleData({ start: '', end: '', duration: '30' });
+      }
+    } catch (error) {
+      alert('Erro ao agendar');
+    }
+  };
 
   const handleControlAction = async () => {
     if (selectedNumbers.length === 0) {
@@ -251,6 +311,133 @@ export default function MaturationPage() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Agendamento */}
+      <div className="card">
+        <div className="card-head">
+          <h2>Agendar Maturação</h2>
+          <button
+            onClick={() => setShowScheduleForm(!showScheduleForm)}
+            className="btn btn-sm"
+            style={{ marginLeft: 'auto' }}
+          >
+            {showScheduleForm ? 'Cancelar' : '+ Novo Agendamento'}
+          </button>
+        </div>
+
+        {showScheduleForm && (
+          <div style={{ padding: '20px', display: 'grid', gap: '15px', borderTop: '1px solid #eee' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600 }}>Início</label>
+                <input
+                  type="datetime-local"
+                  value={scheduleData.start}
+                  onChange={(e) => setScheduleData({ ...scheduleData, start: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    border: '1px solid #ddd',
+                    borderRadius: '8px',
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600 }}>Fim (opcional)</label>
+                <input
+                  type="datetime-local"
+                  value={scheduleData.end}
+                  onChange={(e) => setScheduleData({ ...scheduleData, end: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    border: '1px solid #ddd',
+                    borderRadius: '8px',
+                  }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600 }}>Modo</label>
+                <select
+                  value={mode}
+                  onChange={(e) => setMode(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    border: '1px solid #ddd',
+                    borderRadius: '8px',
+                  }}
+                >
+                  <option value="normal">Normal</option>
+                  <option value="time">Por Tempo (min)</option>
+                  <option value="cycles">Por Ciclos</option>
+                </select>
+              </div>
+
+              {(mode === 'time' || mode === 'cycles') && (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600 }}>
+                    {mode === 'time' ? 'Minutos' : 'Ciclos'}
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={scheduleData.duration}
+                    onChange={(e) => setScheduleData({ ...scheduleData, duration: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      border: '1px solid #ddd',
+                      borderRadius: '8px',
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={handleSchedule}
+              className="btn"
+              style={{ background: '#10b981' }}
+            >
+              {ICONS.check} Agendar
+            </button>
+          </div>
+        )}
+
+        {schedules.length > 0 && (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Início</th>
+                  <th>Fim</th>
+                  <th>Modo</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {schedules.slice(0, 5).map((schedule) => (
+                  <tr key={schedule.id}>
+                    <td>{new Date(schedule.scheduled_start_at).toLocaleString('pt-BR')}</td>
+                    <td>{schedule.scheduled_end_at ? new Date(schedule.scheduled_end_at).toLocaleString('pt-BR') : '—'}</td>
+                    <td><span className="badge">{schedule.mode}</span></td>
+                    <td>
+                      <span className={`badge ${schedule.status === 'pending' ? 'warning' : schedule.status === 'active' ? 'success' : 'default'}`}>
+                        {schedule.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Pares Ativos */}

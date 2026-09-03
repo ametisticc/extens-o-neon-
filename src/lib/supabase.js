@@ -63,4 +63,5 @@ export const DB = {
   BEARER_TOKENS: 'neon_warm_bearer_tokens',
   PAIRS: 'neon_warm_pairs',
   MESSAGES: 'neon_warm_messages',
+  MATURATION_SCHEDULES: 'neon_warm_maturation_schedules',
 };
