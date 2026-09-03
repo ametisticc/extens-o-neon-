@@ -35,7 +35,12 @@ export async function GET(request) {
       query = query.eq('phone_number_id', phone);
     }
 
-    const { data: pauseEvents } = await query;
+    const { data: pauseEvents, error } = await query;
+
+    if (error) {
+      console.error('[admin/maturation/auto-pause-status] erro supabase:', error);
+      return jsonError(`Erro ao buscar pausas: ${error.message}`, 500);
+    }
 
     // Calcular tempo até retomada
     const now = Date.now();
@@ -58,6 +63,6 @@ export async function GET(request) {
     });
   } catch (error) {
     console.error('[admin/maturation/auto-pause-status] erro:', error);
-    return jsonError('Erro ao buscar status de pausas', 500);
+    return jsonError(`Erro ao buscar status de pausas: ${error?.message || 'desconhecido'}`, 500);
   }
 }

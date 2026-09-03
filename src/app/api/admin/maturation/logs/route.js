@@ -38,7 +38,8 @@ export async function GET(request) {
     const { data, error } = await query;
 
     if (error) {
-      return jsonError('Erro ao buscar logs', 500);
+      console.error('[admin/maturation/logs] erro supabase:', error);
+      return jsonError(`Erro ao buscar logs: ${error.message}`, 500);
     }
 
     return jsonOk({
@@ -48,6 +49,6 @@ export async function GET(request) {
     });
   } catch (error) {
     console.error('[admin/maturation/logs] erro:', error);
-    return jsonError('Erro ao buscar logs', 500);
+    return jsonError(`Erro ao buscar logs: ${error?.message || 'desconhecido'}`, 500);
   }
 }

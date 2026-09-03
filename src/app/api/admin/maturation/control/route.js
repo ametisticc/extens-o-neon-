@@ -117,6 +117,6 @@ export async function POST(request) {
     });
   } catch (error) {
     console.error('[admin/maturation/control] erro:', error);
-    return jsonError('Erro ao controlar maturação', 500);
+    return jsonError(`Erro ao controlar maturação: ${error?.message || 'desconhecido'}`, 500);
   }
 }

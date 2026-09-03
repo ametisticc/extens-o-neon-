@@ -43,12 +43,18 @@ export async function GET(request) {
       .gte('created_at', startDate.toISOString())
       .in('event_type', ['validation_success', 'validation_failed', 'heartbeat', 'session_started']);
 
-    if (phone) {
-      query = query.eq('metadata->>phone_number', phone);
-    }
+     if (phone) {
+       query = query.eq('metadata->>phone_number', phone);
+     }
 
-    const { data: logs } = await query;
-    const logsList = logs || [];
+     const { data: logs, error } = await query;
+
+     if (error) {
+       console.error('[admin/maturation/analytics] erro supabase:', error);
+       return jsonError(`Erro ao buscar logs: ${error.message}`, 500);
+     }
+
+     const logsList = logs || [];
 
     // 2. Agregar por hora (últimas 24h)
     const hourlyData = {};
@@ -153,6 +159,6 @@ export async function GET(request) {
     });
   } catch (error) {
     console.error('[admin/maturation/analytics] erro:', error);
-    return jsonError('Erro ao gerar analytics', 500);
+    return jsonError(`Erro ao gerar analytics: ${error?.message || 'desconhecido'}`, 500);
   }
 }
