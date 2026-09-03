@@ -68,6 +68,14 @@ const ICON = {
       <path d="M9 13h6M9 17h6" />
     </svg>
   ),
+  maturation: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="1" />
+      <path d="M12 1v6m0 6v6" />
+      <path d="M4.22 4.22l4.24 4.24m0 5.08l-4.24 4.24" />
+      <path d="M19.78 4.22l-4.24 4.24m0 5.08l4.24 4.24" />
+    </svg>
+  ),
   menu: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 6h16M4 12h16M4 18h16" />
@@ -98,6 +106,10 @@ const NAV_GROUPS = [
   {
     label: 'Visão geral',
     items: [{ href: '/admin', label: 'Dashboard', icon: ICON.dashboard }],
+  },
+  {
+    label: 'Maturação',
+    items: [{ href: '/admin/maturation', label: 'Controle em Tempo Real', icon: ICON.maturation }],
   },
   {
     label: 'Operação',
