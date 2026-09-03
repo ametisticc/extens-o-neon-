@@ -2,7 +2,10 @@
 // POST /api/neon-warm/heartbeat
 // ============================================================
 // Atualiza last_heartbeat_at da sessão e last_seen_at do número.
+// Aceita Bearer token ou headers customizados (compatibilidade).
 import { guardExtensionRoute } from '@/lib/api-guard.js';
+import { guardBearerRoute } from '@/lib/api-guard-bearer.js';
+import { extractBearerToken } from '@/lib/auth.js';
 import { heartbeatSession } from '@/lib/sessions.js';
 import { getSupabaseAdmin, DB } from '@/lib/supabase.js';
 import { normalizePhone } from '@/lib/phone.js';
@@ -13,7 +16,16 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request) {
-  const guard = await guardExtensionRoute(request, 'heartbeat');
+  // Tenta Bearer token primeiro, fallback para headers
+  let guard;
+  const bearerToken = extractBearerToken(request);
+  
+  if (bearerToken) {
+    guard = await guardBearerRoute(request, 'heartbeat');
+  } else {
+    guard = await guardExtensionRoute(request, 'heartbeat');
+  }
+  
   if (!guard.ok) return guard.response;
 
   const body = await readJsonBody(request);

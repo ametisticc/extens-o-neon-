@@ -60,6 +60,7 @@ export const DB = {
   SESSIONS: 'neon_warm_sessions',
   LOGS: 'neon_warm_logs',
   EXTENSION_KEYS: 'neon_warm_extension_keys',
+  BEARER_TOKENS: 'neon_warm_bearer_tokens',
   PAIRS: 'neon_warm_pairs',
   MESSAGES: 'neon_warm_messages',
 };

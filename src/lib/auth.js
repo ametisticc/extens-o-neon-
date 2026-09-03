@@ -155,5 +155,73 @@ export async function authenticateLicenseKey({ extensionId, apiKey }, deps = {})
     .then(() => {})
     .catch(() => {});
 
-  return { ok: true, license, number, licenseKey };
+   return { ok: true, license, number, licenseKey };
+}
+
+/**
+ * Valida um Bearer token (gerado por POST /api/neon-warm/auth/token).
+ * Retorna os dados do token e atualiza last_used_at.
+ *
+ * @param {string} token - Token Bearer (completo, ex: "nws_...")
+ * @param {{ supabase?: object }} [deps] - Client injetável (para testes).
+ * @returns {Promise<{ ok: boolean; reason?: string; tokenRecord?: any }>}
+ */
+export async function authenticateBearerToken(token, deps = {}) {
+  if (!token || typeof token !== 'string') {
+    return { ok: false, reason: 'invalid_token' };
+  }
+
+  const tokenHash = sha256(token);
+  const supabase = deps.supabase ?? getSupabaseAdmin();
+
+  const { data, error } = await supabase
+    .from(DB.BEARER_TOKENS)
+    .select('id, token_hash, extension_id, license_id, device_id, created_at, expires_at, status')
+    .eq('token_hash', tokenHash)
+    .maybeSingle();
+
+  if (error) {
+    console.error('[auth] erro ao buscar bearer token:', error.message);
+    return { ok: false, reason: 'internal_error' };
+  }
+
+  if (!data) {
+    return { ok: false, reason: 'invalid_token' };
+  }
+
+  // Verifica expiração
+  if (data.expires_at && new Date(data.expires_at).getTime() <= Date.now()) {
+    return { ok: false, reason: 'token_expired' };
+  }
+
+  // Verifica status
+  if (data.status !== 'active') {
+    return { ok: false, reason: 'token_revoked' };
+  }
+
+  // Atualiza last_used_at (fire-and-forget, não bloqueia a resposta)
+  supabase
+    .from(DB.BEARER_TOKENS)
+    .update({ last_used_at: new Date().toISOString() })
+    .eq('id', data.id)
+    .then(() => {})
+    .catch(() => {});
+
+  return { ok: true, tokenRecord: data };
+}
+
+/**
+ * Extrai Bearer token do header Authorization.
+ * Retorna o token sem o prefixo "Bearer ", ou null se ausente.
+ */
+export function extractBearerToken(request) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader) return null;
+
+  const parts = authHeader.trim().split(/\s+/);
+  if (parts.length !== 2 || parts[0].toLowerCase() !== 'bearer') {
+    return null;
+  }
+
+  return parts[1].trim() || null;
 }

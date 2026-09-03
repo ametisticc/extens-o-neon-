@@ -2,7 +2,12 @@
 // POST /api/neon-warm/validate
 // ============================================================
 // Valida se um número está autorizado a usar o Neon Warm.
+// Aceita:
+//   - Bearer token (Authorization: Bearer <token>) — preferido
+//   - Headers customizados (X-NeonWarm-Key) — fallback
 import { guardExtensionRoute } from '@/lib/api-guard.js';
+import { guardBearerRoute } from '@/lib/api-guard-bearer.js';
+import { extractBearerToken } from '@/lib/auth.js';
 import { validateNeonWarmAccess } from '@/lib/validation.js';
 import { readJsonBody, validateSessionPayload, jsonOk, jsonError } from '@/lib/http.js';
 import { logEvent } from '@/lib/logger.js';
@@ -11,7 +16,17 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request) {
-  const guard = await guardExtensionRoute(request, 'validate');
+  // Tenta autenticação por Bearer token primeiro (novo padrão)
+  let guard;
+  const bearerToken = extractBearerToken(request);
+  
+  if (bearerToken) {
+    guard = await guardBearerRoute(request, 'validate');
+  } else {
+    // Fallback para headers customizados (compatibilidade)
+    guard = await guardExtensionRoute(request, 'validate');
+  }
+  
   if (!guard.ok) return guard.response;
 
   const body = await readJsonBody(request);

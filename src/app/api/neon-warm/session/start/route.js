@@ -3,7 +3,10 @@
 // ============================================================
 // Inicia uma sessão para um número autorizado.
 // O token de sessão é retornado UMA vez; apenas o hash é gravado.
+// Aceita Bearer token ou headers customizados (compatibilidade).
 import { guardExtensionRoute } from '@/lib/api-guard.js';
+import { guardBearerRoute } from '@/lib/api-guard-bearer.js';
+import { extractBearerToken } from '@/lib/auth.js';
 import { validateNeonWarmAccess } from '@/lib/validation.js';
 import { startSession } from '@/lib/sessions.js';
 import { readJsonBody, validateSessionPayload, jsonOk, jsonError } from '@/lib/http.js';
@@ -13,7 +16,16 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request) {
-  const guard = await guardExtensionRoute(request, 'session_start');
+  // Tenta Bearer token primeiro, fallback para headers
+  let guard;
+  const bearerToken = extractBearerToken(request);
+  
+  if (bearerToken) {
+    guard = await guardBearerRoute(request, 'session_start');
+  } else {
+    guard = await guardExtensionRoute(request, 'session_start');
+  }
+  
   if (!guard.ok) return guard.response;
 
   const body = await readJsonBody(request);
