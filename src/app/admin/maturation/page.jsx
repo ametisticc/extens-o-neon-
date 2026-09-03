@@ -254,6 +254,28 @@ export default function MaturationPage() {
                 fontFamily: 'monospace',
               }}
             />
+            {selectedNumbers.length > 0 && (
+              <div style={{ marginTop: '10px', fontSize: '12px' }}>
+                {selectedNumbers.map((num, idx) => (
+                  <Link
+                    key={idx}
+                    href={`/admin/maturation/health/${num}`}
+                    style={{
+                      display: 'inline-block',
+                      padding: '4px 8px',
+                      margin: '4px 4px 4px 0',
+                      background: '#f0f0f0',
+                      borderRadius: '4px',
+                      textDecoration: 'none',
+                      color: '#0066cc',
+                      fontSize: '11px',
+                    }}
+                  >
+                    📊 {num}
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
